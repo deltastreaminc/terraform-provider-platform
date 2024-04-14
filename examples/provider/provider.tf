@@ -1,0 +1,2 @@
+provider "deltastream-dataplane" {
+}
