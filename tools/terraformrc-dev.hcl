@@ -1,6 +1,6 @@
 provider_installation {
   dev_overrides {
-      "registry.terraform.io/deltastream/deltastream-dataplane" = "/path/to/go/bin"
+      "registry.terraform.io/deltastreaminc/platform" = "/path/to/go/bin"
   }
 
   direct {}

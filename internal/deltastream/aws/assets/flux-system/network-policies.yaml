@@ -1,0 +1,206 @@
+---
+# default deny
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: flux-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+# allow kube api access
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-kube
+  namespace: flux-system
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+            - port: "443"
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: helm-controller
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app: helm-controller
+  egress:
+    - toEndpoints:
+      - matchLabels:
+          "k8s:io.kubernetes.pod.namespace": flux-system
+          "k8s:app": notification-controller
+      - matchLabels:
+          "k8s:io.kubernetes.pod.namespace": flux-system
+          "k8s:app": source-controller
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kustomize-controller
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app: kustomize-controller
+  egress:
+    - toEndpoints:
+      - matchLabels:
+          "k8s:io.kubernetes.pod.namespace": flux-system
+          "k8s:app": notification-controller
+      - matchLabels:
+          "k8s:io.kubernetes.pod.namespace": flux-system
+          "k8s:app": source-controller
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: source-controller
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:app: source-controller
+  ingress:
+    - fromEndpoints:
+      - matchLabels:
+          io.kubernetes.pod.namespace: flux-system
+          app: helm-controller
+      - matchLabels:
+          io.kubernetes.pod.namespace: flux-system
+          app: kustomize-controller
+  egress:
+    - toFQDNs:
+        - matchName: "sts.{{ .Region }}.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: "{{ .AccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: "api.ecr.{{ .Region }}.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchPattern: "*.s3.{{ .Region }}.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchPattern: "*.cloudfront.net"
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: aws.github.io
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: charts.external-secrets.io
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: charts.jetstack.io
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: github.com
+        - matchName: objects.githubusercontent.com
+      toPorts:
+        - ports:
+            - port: "22"
+            - port: "443"
+    - toFQDNs:
+        - matchName: githost.docker.local
+      toPorts:
+        - ports:
+            - port: "2222"
+    - toFQDNs:
+        - matchName: helm.cilium.io
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: kyverno.github.io
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: public.ecr.aws
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: helm.releases.hashicorp.com
+      toPorts:
+        - ports:
+            - port: "443"
+    - toFQDNs:
+        - matchName: charts.bitnami.com
+        - matchName: repo.vmware.com
+      toPorts:
+        - ports:
+            - port: "443"
+    - toEndpoints:
+      - matchLabels:
+          "k8s:io.kubernetes.pod.namespace": flux-system
+          "k8s:app": notification-controller
+    - toCIDR:
+      # eks pod identity generate request for creds to this ip
+      - "169.254.170.23/32"
+      toPorts:
+      - ports:
+        - port: "80"
+          protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: notification-controller
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:app: notification-controller
+  ingress:
+    - fromEndpoints:
+      - matchLabels:
+          io.kubernetes.pod.namespace: flux-system
+          app: helm-controller
+      - matchLabels:
+          io.kubernetes.pod.namespace: flux-system
+          app: kustomize-controller
+      - matchLabels:
+          io.kubernetes.pod.namespace: flux-system
+          app: source-controller

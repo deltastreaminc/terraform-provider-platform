@@ -11,34 +11,39 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+
+	"github.com/deltastreaminc/terraform-provider-platform/internal/config"
+	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws"
 )
 
 // Ensure ScaffoldingProvider satisfies various provider interfaces.
-var _ provider.Provider = &DeltaStreamDataplaneProvider{}
-var _ provider.ProviderWithFunctions = &DeltaStreamDataplaneProvider{}
+var _ provider.Provider = &DeltaStreamPlatformProvider{}
+var _ provider.ProviderWithFunctions = &DeltaStreamPlatformProvider{}
 
-// DeltaStreamDataplaneProvider defines the provider implementation.
-type DeltaStreamDataplaneProvider struct {
+// DeltaStreamPlatformProvider defines the provider implementation.
+type DeltaStreamPlatformProvider struct {
 	// version is the provider version. set by goreleaser.
 	version string
 }
 
-// DeltaStreamDataplaneProviderModel describes the provider data model.
-type DeltaStreamDataplaneProviderModel struct {
+// DeltaStreamPlatformProviderModel describes the provider data model.
+type DeltaStreamPlatformProviderModel struct {
 }
 
-func (p *DeltaStreamDataplaneProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "deltastream-dataplane"
+func (p *DeltaStreamPlatformProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+	resp.TypeName = "platform"
 	resp.Version = p.version
 }
 
-func (p *DeltaStreamDataplaneProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *DeltaStreamPlatformProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description: "DeltaStream Platform provider",
+
 		Attributes: map[string]schema.Attribute{},
 	}
 }
-func (p *DeltaStreamDataplaneProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
-	var data DeltaStreamDataplaneProviderModel
+func (p *DeltaStreamPlatformProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+	var data DeltaStreamPlatformProviderModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 
@@ -46,24 +51,26 @@ func (p *DeltaStreamDataplaneProvider) Configure(ctx context.Context, req provid
 		return
 	}
 
-	resp.ResourceData = nil
+	resp.ResourceData = &config.PlatformResourceData{Version: p.version}
 }
 
-func (p *DeltaStreamDataplaneProvider) Resources(ctx context.Context) []func() resource.Resource {
-	return []func() resource.Resource{}
+func (p *DeltaStreamPlatformProvider) Resources(ctx context.Context) []func() resource.Resource {
+	return []func() resource.Resource{
+		aws.NewAWSDataplaneResource,
+	}
 }
 
-func (p *DeltaStreamDataplaneProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
+func (p *DeltaStreamPlatformProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{}
 }
 
-func (p *DeltaStreamDataplaneProvider) Functions(ctx context.Context) []func() function.Function {
+func (p *DeltaStreamPlatformProvider) Functions(ctx context.Context) []func() function.Function {
 	return []func() function.Function{}
 }
 
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
-		return &DeltaStreamDataplaneProvider{
+		return &DeltaStreamPlatformProvider{
 			version: version,
 		}
 	}

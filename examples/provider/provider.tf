@@ -1,2 +1,2 @@
-provider "deltastream-dataplane" {
+provider "deltastream-platform" {
 }

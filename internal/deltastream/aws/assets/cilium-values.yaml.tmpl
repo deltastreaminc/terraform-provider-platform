@@ -1,0 +1,135 @@
+image:
+  repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/cilium"
+cluster:
+  id: 1
+  name: {{ .ClusterName }}
+resources:
+  limits:
+    cpu: 500m
+    memory: 500Mi
+  requests:
+    cpu: 100m
+    memory: 250Mi
+securityContext:
+  privileged: false
+  seLinuxOptions: ~
+nodePort:
+  enabled: true # required for bpf.masquerade
+socketLB:
+  enabled: true # required for bpf.masquerade
+routingMode: native
+bpf:
+  mapDynamicSizeRatio: 0.01
+  masquerade: true
+  policyMapMax: 65536
+cni:
+  exclusive: false
+# egressMasqueradeInterfaces: eth0
+envoy:
+  image:
+    repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/cilium-envoy"
+  enabled: true
+  podSecurityContext:
+    fsGroup: 65532
+  securityContext:
+    seLinuxOptions: {}
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsGroup: 65532
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+encryption:
+  enabled: true
+  nodeEncryption: true
+  type: wireguard
+eni:
+  enabled: true
+ipam:
+  mode: eni
+hubble:
+  relay:
+    image:
+      repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/hubble-relay"
+    enabled: true
+    tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    extraVolumeMounts:
+    - mountPath: /home/nonroot/.config
+      name: relay-config
+    extraVolumes:
+    - emptyDir: {}
+      name: relay-config
+    podSecurityContext:
+      fsGroup: 65532
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsGroup: 65532
+      runAsNonRoot: true
+      runAsUser: 65532
+      seccompProfile:
+        type: RuntimeDefault
+  ui:
+    enabled: true
+    securityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      runAsNonRoot: true
+    tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    frontend:
+      image:
+        repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/hubble-ui"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        privileged: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+    backend:
+      image:
+        repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/hubble-ui-backend"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        privileged: false
+        readOnlyRootFilesystem: true
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+operator:
+  image:
+    repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/operator"
+  replicas: 2
+policyEnforcementMode: default
+policyCIDRMatchMode: nodes
+hostFirewall:
+  enabled: false
+l7Proxy: true
+tunnelProtocol: ""
+certgen:
+  image:
+    repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/certgen"
+preflight:
+  image:
+    repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/cilium"
