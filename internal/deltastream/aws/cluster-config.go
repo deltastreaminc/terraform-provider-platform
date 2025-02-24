@@ -111,6 +111,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"infraName":                        []byte("ds-" + config.InfraId.ValueString()),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
+			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
 			"vpcId":                            []byte(config.VpcId.ValueString()),
 			"vpcCidr":                          []byte(config.VpcCidr.ValueString()),
 			"vpcPrivateSubnetIDs":              []byte(strings.Join(vpcPrivateSubnets, ",")),
