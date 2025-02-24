@@ -48,11 +48,12 @@ type ClusterConfiguration struct {
 	DsAccountId basetypes.StringValue `tfsdk:"ds_account_id"`
 	DsRegion    basetypes.StringValue `tfsdk:"ds_region"`
 
-	AccountId      basetypes.StringValue `tfsdk:"account_id"`
-	InfraId        basetypes.StringValue `tfsdk:"infra_id"`
-	EksResourceId  basetypes.StringValue `tfsdk:"eks_resource_id"`
-	ClusterIndex   basetypes.Int64Value  `tfsdk:"cluster_index"`
-	ProductVersion basetypes.StringValue `tfsdk:"product_version"`
+	AccountId       basetypes.StringValue `tfsdk:"account_id"`
+	InfraId         basetypes.StringValue `tfsdk:"infra_id"`
+	EksResourceId   basetypes.StringValue `tfsdk:"eks_resource_id"`
+	ClusterIndex    basetypes.Int64Value  `tfsdk:"cluster_index"`
+	ProductVersion  basetypes.StringValue `tfsdk:"product_version"`
+	CpuArchitecture basetypes.StringValue `tfsdk:"cpu_architecture"`
 
 	VpcId                basetypes.StringValue `tfsdk:"vpc_id"`
 	VpcCidr              basetypes.StringValue `tfsdk:"vpc_cidr"`
@@ -211,7 +212,10 @@ var Schema = schema.Schema{
 					Description: "The version of the DeltaStream product. (provided by DeltaStream)",
 					Required:    true,
 				},
-
+				"cpu_architecture": schema.StringAttribute{
+					Description: "The CPU Architecture for EKS.",
+					Required:    true,
+				},
 				"vpc_id": schema.StringAttribute{
 					Description: "The VPC ID of the cluster.",
 					Required:    true,
