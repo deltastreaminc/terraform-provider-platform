@@ -161,6 +161,10 @@ const deploymentConfigTmpl = `
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
     "externalID": "{{ .KafkaRoleExternalId }}"
+  },
+  "tailscale": {
+	"clientId": "{{ .Tailscale.ClientId }}",
+	"clientSecret": "{{ .Tailscale.ClientSecret }}"
   }
 }`
 
@@ -168,13 +172,14 @@ const deploymentConfigTmpl = `
 // update interactiveKafka to use separate IAM role arn for interactive topics
 
 type DSSecrets struct {
-	GoogleClientID      string `json:"googleClientID"`
-	GoogleClientSecret  string `json:"googleClientSecret"`
-	PagerdutyServiceKey string `json:"pagerdutyServiceKey"`
-	Auth0Api            Auth0  `json:"auth0api"`
-	Auth0Cli            Auth0  `json:"auth0cli"`
-	SendgridApiKey      string `json:"sendgridApiKey"`
-	PostHogPublicId     string `json:"posthogPublicID"`
+	GoogleClientID      string    `json:"googleClientID"`
+	GoogleClientSecret  string    `json:"googleClientSecret"`
+	PagerdutyServiceKey string    `json:"pagerdutyServiceKey"`
+	Auth0Api            Auth0     `json:"auth0api"`
+	Auth0Cli            Auth0     `json:"auth0cli"`
+	SendgridApiKey      string    `json:"sendgridApiKey"`
+	PostHogPublicId     string    `json:"posthogPublicID"`
+	Tailscale           Tailscale `json:"tailscale"`
 }
 
 type Auth0 struct {
@@ -193,6 +198,11 @@ type PostgresHostConfig struct {
 	Host     string
 	Port     int
 	Database string
+}
+
+type Tailscale struct {
+	ClientId     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
 }
 
 func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (diags diag.Diagnostics) {
