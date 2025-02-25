@@ -58,6 +58,8 @@ type ClusterConfiguration struct {
 	VpcId                basetypes.StringValue `tfsdk:"vpc_id"`
 	VpcCidr              basetypes.StringValue `tfsdk:"vpc_cidr"`
 	VpcDnsIP             basetypes.StringValue `tfsdk:"vpc_dns_ip"`
+	VpnMode              basetypes.StringValue `tfsdk:"vpn_mode"`
+
 	PrivateLinkSubnetIds basetypes.ListValue   `tfsdk:"private_link_subnets_ids"`
 
 	PrivateSubnetIds       basetypes.ListValue   `tfsdk:"private_subnet_ids"`
@@ -228,6 +230,11 @@ var Schema = schema.Schema{
 					Description: "The VPC DNS server IP address.",
 					Required:    true,
 					Validators:  []validator.String{},
+				},
+				"vpn_mode": schema.StringAttribute{
+					Description: "The VPN Mode for the cluster, can be None, Tailscale, AwsVpn.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.OneOf("None", "Tailscale", "AwsVpn")},
 				},
 				"private_link_subnets_ids": schema.ListAttribute{
 					Description: "The private subnet IDs of the private links from dataplane VPC.",
