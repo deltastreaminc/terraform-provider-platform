@@ -163,8 +163,8 @@ const deploymentConfigTmpl = `
     "externalID": "{{ .KafkaRoleExternalId }}"
   },
   "tailscale": {
-	"clientId": "{{ .Tailscale.ClientId }}",
-	"clientSecret": "{{ .Tailscale.ClientSecret }}"
+	"clientId": "{{ .DSSecret.Tailscale.ClientId }}",
+	"clientSecret": "{{ .DSSecret.Tailscale.ClientSecret }}"
   }
 }`
 
