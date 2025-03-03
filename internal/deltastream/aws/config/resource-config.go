@@ -55,12 +55,12 @@ type ClusterConfiguration struct {
 	ProductVersion  basetypes.StringValue `tfsdk:"product_version"`
 	CpuArchitecture basetypes.StringValue `tfsdk:"cpu_architecture"`
 
-	VpcId                basetypes.StringValue `tfsdk:"vpc_id"`
-	VpcCidr              basetypes.StringValue `tfsdk:"vpc_cidr"`
-	VpcDnsIP             basetypes.StringValue `tfsdk:"vpc_dns_ip"`
-	VpnMode              basetypes.StringValue `tfsdk:"vpn_mode"`
+	VpcId    basetypes.StringValue `tfsdk:"vpc_id"`
+	VpcCidr  basetypes.StringValue `tfsdk:"vpc_cidr"`
+	VpcDnsIP basetypes.StringValue `tfsdk:"vpc_dns_ip"`
+	VpnMode  basetypes.StringValue `tfsdk:"vpn_mode"`
 
-	PrivateLinkSubnetIds basetypes.ListValue   `tfsdk:"private_link_subnets_ids"`
+	PrivateLinkSubnetIds basetypes.ListValue `tfsdk:"private_link_subnets_ids"`
 
 	PrivateSubnetIds       basetypes.ListValue   `tfsdk:"private_subnet_ids"`
 	PublicSubnetIds        basetypes.ListValue   `tfsdk:"public_subnet_ids"`
@@ -124,16 +124,24 @@ type ClusterConfiguration struct {
 	KafkaListenerPorts basetypes.ListValue   `tfsdk:"kafka_listener_ports"`
 	KafkaClusterName   basetypes.StringValue `tfsdk:"kafka_cluster_name"`
 
-	RdsResourceID basetypes.StringValue `tfsdk:"rds_resource_id"`
+	RdsControlPlaneResourceID basetypes.StringValue `tfsdk:"rds_control_plane_resource_id"`
+	RdsMViewsResourceID       basetypes.StringValue `tfsdk:"rds_mviews_resource_id"`
+	RdsMViewsUsingAurora      basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
+
 	Cw2LokiSqsUrl basetypes.StringValue `tfsdk:"cw2loki_sqs_url"`
 
-	ConsoleHostname         basetypes.StringValue `tfsdk:"console_hostname"`
-	DownloadsHostname       basetypes.StringValue `tfsdk:"downloads_hostname"`
-	RdsCACertsSecret        basetypes.StringValue `tfsdk:"rds_ca_certs_secret"`
-	RdsMasterPasswordSecret basetypes.StringValue `tfsdk:"rds_master_password_secret"`
-	RdsDatabaseName         basetypes.StringValue `tfsdk:"rds_database_name"`
-	RdsHostName             basetypes.StringValue `tfsdk:"rds_host_name"`
-	RdsHostPort             basetypes.Int64Value  `tfsdk:"rds_host_port"`
+	ConsoleHostname                     basetypes.StringValue `tfsdk:"console_hostname"`
+	DownloadsHostname                   basetypes.StringValue `tfsdk:"downloads_hostname"`
+	RdsCACertsSecret                    basetypes.StringValue `tfsdk:"rds_ca_certs_secret"`
+	RdsControlPlaneMasterPasswordSecret basetypes.StringValue `tfsdk:"rds_control_plane_master_password_secret"`
+	RdsControlPlaneDatabaseName         basetypes.StringValue `tfsdk:"rds_control_plane_database_name"`
+	RdsControlPlaneHostName             basetypes.StringValue `tfsdk:"rds_control_plane_host_name"`
+	RdsControlPlaneHostPort             basetypes.Int64Value  `tfsdk:"rds_control_plane_host_port"`
+
+	RdsMViewsMasterPasswordSecret basetypes.StringValue `tfsdk:"rds_mviews_master_password_secret"`
+	RdsMViewsDatabaseName         basetypes.StringValue `tfsdk:"rds_mviews_database_name"`
+	RdsMViewsHostName             basetypes.StringValue `tfsdk:"rds_mviews_host_name"`
+	RdsMViewsHostPort             basetypes.Int64Value  `tfsdk:"rds_mviews_host_port"`
 
 	InstallationTimestamp basetypes.StringValue `tfsdk:"installation_timestamp"`
 }
@@ -506,8 +514,17 @@ var Schema = schema.Schema{
 					Required:    true,
 				},
 
-				"rds_resource_id": schema.StringAttribute{
-					Description: "The resource ID of the RDS instance for storing DeltaStream data.",
+				"rds_control_plane_resource_id": schema.StringAttribute{
+					Description: "The resource ID of the RDS controlplane instance for storing DeltaStream data.",
+					Required:    true,
+				},
+
+				"rds_mviews_resource_id": schema.StringAttribute{
+					Description: "The resource ID of the RDS mviews instance for storing Materialized views data.",
+					Required:    true,
+				},
+				"rds_mviews_using_aurora": schema.BoolAttribute{
+					Description: "Flag to indicate rds for mviews is aurora cluster.",
 					Required:    true,
 				},
 				"cw2loki_sqs_url": schema.StringAttribute{
@@ -531,22 +548,41 @@ var Schema = schema.Schema{
 					Description: "The secret id in AWS secrets manager holding RDS instance AWS CA certificates",
 					Required:    true,
 				},
-				"rds_master_password_secret": schema.StringAttribute{
-					Description: "The secret id in AWS secrets manager holding RDS admin credentials managed and rotated by RDS",
+
+				"rds_control_plane_master_password_secret": schema.StringAttribute{
+					Description: "The secret id in AWS secrets manager holding RDS control plane admin credentials managed and rotated by RDS",
 					Required:    true,
 				},
-				"rds_database_name": schema.StringAttribute{
-					Description: "RDS postgres database name for deltastream",
+				"rds_control_plane_database_name": schema.StringAttribute{
+					Description: "RDS control plane postgres database name for deltastream",
 					Required:    true,
 				},
-				"rds_host_name": schema.StringAttribute{
-					Description: "RDS host name",
+				"rds_control_plane_host_name": schema.StringAttribute{
+					Description: "RDS control plane host name",
 					Required:    true,
 				},
-				"rds_host_port": schema.Int64Attribute{
-					Description: "RDS host name",
+				"rds_control_plane_host_port": schema.Int64Attribute{
+					Description: "RDS control plane host name",
 					Required:    true,
 				},
+
+				"rds_mviews_master_password_secret": schema.StringAttribute{
+					Description: "The secret id in AWS secrets manager holding RDS MViews admin credentials managed and rotated by RDS",
+					Required:    true,
+				},
+				"rds_mviews_database_name": schema.StringAttribute{
+					Description: "RDS MViews postgres database name for deltastream",
+					Required:    false,
+				},
+				"rds_mviews_host_name": schema.StringAttribute{
+					Description: "RDS MViews host name",
+					Required:    false,
+				},
+				"rds_mviews_host_port": schema.Int64Attribute{
+					Description: "RDS MViews host name",
+					Required:    false,
+				},
+
 				"installation_timestamp": schema.StringAttribute{
 					Description: "Installation timestamp provided by caller.",
 					Required:    true,

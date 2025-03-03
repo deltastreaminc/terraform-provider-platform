@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -34,11 +35,11 @@ const deploymentConfigTmpl = `
   "postgres": {
     "username": "deprecated_use_secret",
     "password": "deprecated_use_secret",
-    "credentialAwsSecret" : "{{ .RdsCreds.AwsSecretName}}",
-    "database": "{{ .RdsConfig.Database }}",
+    "credentialAwsSecret" : "{{ .RdsControlPlaneCreds.AwsSecretName}}",
+    "database": "{{ .RdsControlPlaneConfig.Database }}",
     "sslMode": "verify-full",
-    "host": "{{ .RdsConfig.Host }}",
-    "port": {{ .RdsConfig.Port }}
+    "host": "{{ .RdsControlPlaneConfig.Host }}",
+    "port": {{ .RdsControlPlaneConfig.Port }}
   },
   "kafka": {
     "hosts": "{{ .KafkaBrokerList }}",
@@ -123,7 +124,7 @@ const deploymentConfigTmpl = `
   "cw2loki": {
     "eksClusterName": "{{ .KubeClusterName }}",
     "mskClusterName": "{{ .KafkaClusterName }}",
-    "rdsName": "{{ .RdsClusterName}}",
+    "rdsName": "{{ .RdsControlPlaneClusterName}}",
     "importBucketAccount": "{{ .AccountID }}",
     "sqsURL": "{{ .Cw2LokiSqsURL }}"
   },
@@ -150,7 +151,7 @@ const deploymentConfigTmpl = `
     "database": "{{ .MaterializedViewRdsConfig.Database }}",
     "sslMode": "verify-full",
     "host": "{{ .MaterializedViewRdsConfig.Host }}",
-    "port": {{ .RdsConfig.Port }}
+    "port": {{ .MaterializedViewRdsConfig.Port }}
   },
   "interactiveKafka": {
     "hosts": "{{ .KafkaBrokerList }}",
@@ -231,45 +232,93 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		return
 	}
 
-	// Get Postgres credentials
+	// Get Control plane Postgres credentials
 	secretsmanagerClient := secretsmanager.NewFromConfig(cfg)
-	rdsSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsMasterPasswordSecret.ValueString())
-	rdsCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: ptr.To(rdsSecretArn),
+	rdsControlPlaneSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsControlPlaneMasterPasswordSecret.ValueString())
+	rdsControlPlaneCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: ptr.To(rdsControlPlaneSecretArn),
 	})
 	if err != nil {
-		diags.AddError("unable to read rds credentials "+rdsSecretArn, err.Error())
+		diags.AddError("unable to read rds credentials "+rdsControlPlaneSecretArn, err.Error())
 		return
 	}
 
-	pgCred := &PostgresCredSecret{}
-	if err := json.Unmarshal([]byte(ptr.Deref(rdsCred.SecretString, string(rdsCred.SecretBinary))), pgCred); err != nil {
+	pgControlPlaneCred := &PostgresCredSecret{}
+	if err := json.Unmarshal([]byte(ptr.Deref(rdsControlPlaneCred.SecretString, string(rdsControlPlaneCred.SecretBinary))), pgControlPlaneCred); err != nil {
 		diags.AddError("unable to unmarshal rds credentials", err.Error())
 		return
 	}
-	pgCred.AwsSecretName = config.RdsMasterPasswordSecret.ValueString()
+	pgControlPlaneCred.AwsSecretName = config.RdsControlPlaneMasterPasswordSecret.ValueString()
 
-	rdsConfig := &PostgresHostConfig{
-		Host:     config.RdsHostName.ValueString(),
-		Port:     int(config.RdsHostPort.ValueInt64()),
-		Database: config.RdsDatabaseName.ValueString(),
+	rdsControlPlaneConfig := &PostgresHostConfig{
+		Host:     config.RdsControlPlaneHostName.ValueString(),
+		Port:     int(config.RdsControlPlaneHostPort.ValueInt64()),
+		Database: config.RdsControlPlaneDatabaseName.ValueString(),
 	}
 
-	// pass materialized View Rds Config
-	// note we will separate out the materialized view RDS from control plane RDS to avoid impact of materialized views queries on control plane workflows
-	// right now testing with same Rds instance
+	// Get MViews Postgres credentials
+	rdsMViewsSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsMViewsMasterPasswordSecret.ValueString())
+	rdsMViewsCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: ptr.To(rdsMViewsSecretArn),
+	})
+	if err != nil {
+		diags.AddError("unable to read rds credentials "+rdsControlPlaneSecretArn, err.Error())
+		return
+	}
+
+	mviewPGHostname := config.RdsMViewsHostName.ValueString()
+	mviewPGPort := int(config.RdsMViewsHostPort.ValueInt64())
+	mviewDBName := config.RdsMViewsDatabaseName.ValueString()
+	if config.RdsMViewsUsingAurora.ValueBool() {
+		// Terraform does not provide a data resource to lookup an RDS aurora cluster configuration
+		// Use AWS RDS client to identify dbname, endpoints and ports
+		rdsClient := rds.NewFromConfig(cfg)
+
+		dbClusterInput := &rds.DescribeDBClustersInput{
+			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+		}
+
+		dbCluster, err := rdsClient.DescribeDBClusters(context.TODO(), dbClusterInput)
+		if err != nil {
+			diags.AddError("failed to describe DB clusters " + config.RdsMViewsResourceID.ValueString(), err.Error())
+		}
+		for _, cluster := range dbCluster.DBClusters {
+			mviewDBName = *cluster.DatabaseName
+			mviewPGPort = int(*cluster.Port)
+			// for now pass the single database name for mviews
+			break
+		}
+
+		auroraClusterEPInput := &rds.DescribeDBClusterEndpointsInput{
+			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+		}
+
+		// use describe cluster endpoint to identify mview host name
+		auroraClusterEP, err := rdsClient.DescribeDBClusterEndpoints(ctx, auroraClusterEPInput)
+		if err != nil {
+			diags.AddError("failed to describe Aurora DB cluster endpoints for " + config.RdsMViewsResourceID.ValueString(), err.Error())
+			return
+		}
+
+		for _, endpoint := range auroraClusterEP.DBClusterEndpoints {
+			mviewPGHostname = *endpoint.Endpoint
+			// for now work with single endpoint for mviews
+			break
+		}
+	}
+	// materialized View Rds Config
 	materializedViewRdsConfig := &PostgresHostConfig{
-		Host:     config.RdsHostName.ValueString(),
-		Port:     int(config.RdsHostPort.ValueInt64()),
-		Database: config.RdsDatabaseName.ValueString(),
+		Host:     mviewPGHostname,
+		Port:     mviewPGPort,
+		Database: mviewDBName,
 	}
 	materializedViewPgCred := &PostgresCredSecret{}
 	// note require separate creds for materialized views
-	if err := json.Unmarshal([]byte(ptr.Deref(rdsCred.SecretString, string(rdsCred.SecretBinary))), materializedViewPgCred); err != nil {
+	if err := json.Unmarshal([]byte(ptr.Deref(rdsMViewsCred.SecretString, string(rdsMViewsCred.SecretBinary))), materializedViewPgCred); err != nil {
 		diags.AddError("unable to unmarshal rds credentials", err.Error())
 		return
 	}
-	materializedViewPgCred.AwsSecretName = config.RdsMasterPasswordSecret.ValueString()
+	materializedViewPgCred.AwsSecretName = config.RdsMViewsMasterPasswordSecret.ValueString()
 
 	tmpl, err := template.New("deploymentConfig").Parse(deploymentConfigTmpl)
 	if err != nil {
@@ -295,36 +344,36 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		return
 	}
 
-	rdsClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsResourceID.ValueString())
+	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
-		"AccountID":                 config.AccountId.ValueString(),
-		"Region":                    cfg.Region,
-		"KmsKeyId":                  config.KmsKeyId.ValueString(),
-		"DynamoDbTable":             config.DynamoDbTableName.ValueString(),
-		"RdsCreds":                  pgCred,
-		"RdsConfig":                 rdsConfig,
-		"MaterializedViewRdsCreds":  materializedViewPgCred,
-		"MaterializedViewRdsConfig": materializedViewRdsConfig,
-		"DSSecret":                  dsSecrets,
-		"KafkaBrokerList":           strings.Join(kafkaBrokers, ","),
-		"KafkaBrokerListenerPorts":  strings.Join(kafkaListenerPorts, ","),
-		"KafkaRoleARN":              config.KafkaRoleArn.ValueString(),
-		"KafkaRoleExternalId":       config.KafkaRoleExternalId.ValueString(),
-		"ApiHostname":               config.ApiHostname.ValueString(),
-		"ProductArtifactsBucket":    config.ProductArtifactsBucket.ValueString(),
-		"SerdeBucket":               config.SerdeBucket.ValueString(),
-		"SerdeBucketRegion":         cfg.Region,
-		"FunctionsBucket":           config.FunctionsBucket.ValueString(),
-		"FunctionsBucketRegion":     cfg.Region,
-		"WorkloadStateBucket":       config.WorkloadStateBucket.ValueString(),
-		"O11yBucket":                config.O11yBucket.ValueString(),
-		"OrbBillingBucket":          config.OrbBillingBucket.ValueString(),
-		"OrbBillingBucketRegion":    config.OrbBillingBucketRegion.ValueString(),
-		"KubeClusterName":           kubeClusterName,
-		"KafkaClusterName":          config.KafkaClusterName.ValueString(),
-		"RdsClusterName":            rdsClusterName,
-		"Cw2LokiSqsURL":             config.Cw2LokiSqsUrl.ValueString(),
+		"AccountID":                  config.AccountId.ValueString(),
+		"Region":                     cfg.Region,
+		"KmsKeyId":                   config.KmsKeyId.ValueString(),
+		"DynamoDbTable":              config.DynamoDbTableName.ValueString(),
+		"RdsCreds":                   pgControlPlaneCred,
+		"RdsConfig":                  rdsControlPlaneConfig,
+		"MaterializedViewRdsCreds":   materializedViewPgCred,
+		"MaterializedViewRdsConfig":  materializedViewRdsConfig,
+		"DSSecret":                   dsSecrets,
+		"KafkaBrokerList":            strings.Join(kafkaBrokers, ","),
+		"KafkaBrokerListenerPorts":   strings.Join(kafkaListenerPorts, ","),
+		"KafkaRoleARN":               config.KafkaRoleArn.ValueString(),
+		"KafkaRoleExternalId":        config.KafkaRoleExternalId.ValueString(),
+		"ApiHostname":                config.ApiHostname.ValueString(),
+		"ProductArtifactsBucket":     config.ProductArtifactsBucket.ValueString(),
+		"SerdeBucket":                config.SerdeBucket.ValueString(),
+		"SerdeBucketRegion":          cfg.Region,
+		"FunctionsBucket":            config.FunctionsBucket.ValueString(),
+		"FunctionsBucketRegion":      cfg.Region,
+		"WorkloadStateBucket":        config.WorkloadStateBucket.ValueString(),
+		"O11yBucket":                 config.O11yBucket.ValueString(),
+		"OrbBillingBucket":           config.OrbBillingBucket.ValueString(),
+		"OrbBillingBucketRegion":     config.OrbBillingBucketRegion.ValueString(),
+		"KubeClusterName":            kubeClusterName,
+		"KafkaClusterName":           config.KafkaClusterName.ValueString(),
+		"RdsControlPlaneClusterName": rdsControlPlaneClusterName,
+		"Cw2LokiSqsURL":              config.Cw2LokiSqsUrl.ValueString(),
 	})
 	if err != nil {
 		diags.AddError("unable to render deployment config", err.Error())

@@ -164,7 +164,7 @@ Required:
 - `rds_host_name` (String) RDS host name
 - `rds_host_port` (Number) RDS host name
 - `rds_master_password_secret` (String) The secret id in AWS secrets manager holding RDS admin credentials managed and rotated by RDS
-- `rds_resource_id` (String) The resource ID of the RDS instance for storing DeltaStream data.
+- `rds_control_plane_resource_id` (String) The resource ID of the RDS instance for storing DeltaStream data.
 - `serde_bucket` (String) The S3 bucket for storing SERDE artifacts.
 - `store_proxy_role_arn` (String) The ARN of the role to assume to facilitate connection to customer stores.
 - `tempo_role_arn` (String) The ARN of the role to assume for managing Tempo resources.
