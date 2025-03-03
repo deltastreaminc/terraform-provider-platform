@@ -572,15 +572,15 @@ var Schema = schema.Schema{
 				},
 				"rds_mviews_database_name": schema.StringAttribute{
 					Description: "RDS MViews postgres database name for deltastream",
-					Required:    false,
+					Optional:    true,
 				},
 				"rds_mviews_host_name": schema.StringAttribute{
 					Description: "RDS MViews host name",
-					Required:    false,
+					Optional:    true,
 				},
 				"rds_mviews_host_port": schema.Int64Attribute{
 					Description: "RDS MViews host name",
-					Required:    false,
+					Optional:    true,
 				},
 
 				"installation_timestamp": schema.StringAttribute{
