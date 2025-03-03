@@ -55,12 +55,12 @@ type ClusterConfiguration struct {
 	ProductVersion  basetypes.StringValue `tfsdk:"product_version"`
 	CpuArchitecture basetypes.StringValue `tfsdk:"cpu_architecture"`
 
-	VpcId                basetypes.StringValue `tfsdk:"vpc_id"`
-	VpcCidr              basetypes.StringValue `tfsdk:"vpc_cidr"`
-	VpcDnsIP             basetypes.StringValue `tfsdk:"vpc_dns_ip"`
-	VpnMode              basetypes.StringValue `tfsdk:"vpn_mode"`
+	VpcId    basetypes.StringValue `tfsdk:"vpc_id"`
+	VpcCidr  basetypes.StringValue `tfsdk:"vpc_cidr"`
+	VpcDnsIP basetypes.StringValue `tfsdk:"vpc_dns_ip"`
+	VpnMode  basetypes.StringValue `tfsdk:"vpn_mode"`
 
-	PrivateLinkSubnetIds basetypes.ListValue   `tfsdk:"private_link_subnets_ids"`
+	PrivateLinkSubnetIds basetypes.ListValue `tfsdk:"private_link_subnets_ids"`
 
 	PrivateSubnetIds       basetypes.ListValue   `tfsdk:"private_subnet_ids"`
 	PublicSubnetIds        basetypes.ListValue   `tfsdk:"public_subnet_ids"`
@@ -125,11 +125,14 @@ type ClusterConfiguration struct {
 	KafkaClusterName   basetypes.StringValue `tfsdk:"kafka_cluster_name"`
 
 	RdsControlPlaneResourceID basetypes.StringValue `tfsdk:"rds_control_plane_resource_id"`
+	RdsMViewsResourceID       basetypes.StringValue `tfsdk:"rds_mviews_resource_id"`
+	RdsMViewsUsingAurora      basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
+
 	Cw2LokiSqsUrl basetypes.StringValue `tfsdk:"cw2loki_sqs_url"`
 
-	ConsoleHostname         basetypes.StringValue `tfsdk:"console_hostname"`
-	DownloadsHostname       basetypes.StringValue `tfsdk:"downloads_hostname"`
-	RdsCACertsSecret        basetypes.StringValue `tfsdk:"rds_ca_certs_secret"`
+	ConsoleHostname                     basetypes.StringValue `tfsdk:"console_hostname"`
+	DownloadsHostname                   basetypes.StringValue `tfsdk:"downloads_hostname"`
+	RdsCACertsSecret                    basetypes.StringValue `tfsdk:"rds_ca_certs_secret"`
 	RdsControlPlaneMasterPasswordSecret basetypes.StringValue `tfsdk:"rds_control_plane_master_password_secret"`
 	RdsControlPlaneDatabaseName         basetypes.StringValue `tfsdk:"rds_control_plane_database_name"`
 	RdsControlPlaneHostName             basetypes.StringValue `tfsdk:"rds_control_plane_host_name"`
@@ -520,7 +523,10 @@ var Schema = schema.Schema{
 					Description: "The resource ID of the RDS mviews instance for storing Materialized views data.",
 					Required:    true,
 				},
-
+				"rds_mviews_using_aurora": schema.BoolAttribute{
+					Description: "Flag to indicate rds for mviews is aurora cluster.",
+					Required:    true,
+				},
 				"cw2loki_sqs_url": schema.StringAttribute{
 					Description: "The SQS URL for ingesting CloudWatch data into observability tools.",
 					Required:    true,

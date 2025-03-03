@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -255,7 +257,6 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		Database: config.RdsControlPlaneDatabaseName.ValueString(),
 	}
 
-
 	// Get MViews Postgres credentials
 	rdsMViewsSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsMViewsMasterPasswordSecret.ValueString())
 	rdsMViewsCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
@@ -266,11 +267,49 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		return
 	}
 
+	mviewPGHostname := config.RdsMViewsHostName.ValueString()
+	mviewPGPort := int(config.RdsMViewsHostPort.ValueInt64())
+	mviewDBName := config.RdsMViewsDatabaseName.ValueString()
+	if config.RdsMViewsUsingAurora.ValueBool() {
+		// Terraform does not provide a data resource to lookup an RDS aurora cluster configuration
+		// Use AWS RDS client to identify dbname, endpoints and ports
+		rdsClient := rds.NewFromConfig(cfg)
+
+		dbClusterInput := &rds.DescribeDBClustersInput{
+			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+		}
+
+		dbCluster, err := rdsClient.DescribeDBClusters(context.TODO(), dbClusterInput)
+		if err != nil {
+			log.Fatalf("Failed to describe DB clusters: %v", err)
+		}
+		for _, cluster := range dbCluster.DBClusters {
+			mviewDBName = *cluster.DatabaseName
+			mviewPGPort = int(*cluster.Port)
+			break
+		}
+
+		auroraClusterEPInput := &rds.DescribeDBClusterEndpointsInput{
+			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+		}
+
+		// use describe cluster endpoint to identify mview host name
+		auroraClusterEP, err := rdsClient.DescribeDBClusterEndpoints(ctx, auroraClusterEPInput)
+		if err != nil {
+			diags.AddError("failed to describe Aurora DB cluster endpoints for "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			return
+		}
+
+		for _, endpoint := range auroraClusterEP.DBClusterEndpoints {
+			mviewPGHostname = *endpoint.Endpoint
+			break
+		}
+	}
 	// materialized View Rds Config
 	materializedViewRdsConfig := &PostgresHostConfig{
-		Host:     config.RdsMViewsHostName.ValueString(),
-		Port:     int(config.RdsMViewsHostPort.ValueInt64()),
-		Database: config.RdsMViewsDatabaseName.ValueString(),
+		Host:     mviewPGHostname,
+		Port:     mviewPGPort,
+		Database: mviewDBName,
 	}
 	materializedViewPgCred := &PostgresCredSecret{}
 	// note require separate creds for materialized views
@@ -307,33 +346,33 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
-		"AccountID":                 config.AccountId.ValueString(),
-		"Region":                    cfg.Region,
-		"KmsKeyId":                  config.KmsKeyId.ValueString(),
-		"DynamoDbTable":             config.DynamoDbTableName.ValueString(),
-		"RdsCreds":                  pgControlPlaneCred,
-		"RdsConfig":                 rdsControlPlaneConfig,
-		"MaterializedViewRdsCreds":  materializedViewPgCred,
-		"MaterializedViewRdsConfig": materializedViewRdsConfig,
-		"DSSecret":                  dsSecrets,
-		"KafkaBrokerList":           strings.Join(kafkaBrokers, ","),
-		"KafkaBrokerListenerPorts":  strings.Join(kafkaListenerPorts, ","),
-		"KafkaRoleARN":              config.KafkaRoleArn.ValueString(),
-		"KafkaRoleExternalId":       config.KafkaRoleExternalId.ValueString(),
-		"ApiHostname":               config.ApiHostname.ValueString(),
-		"ProductArtifactsBucket":    config.ProductArtifactsBucket.ValueString(),
-		"SerdeBucket":               config.SerdeBucket.ValueString(),
-		"SerdeBucketRegion":         cfg.Region,
-		"FunctionsBucket":           config.FunctionsBucket.ValueString(),
-		"FunctionsBucketRegion":     cfg.Region,
-		"WorkloadStateBucket":       config.WorkloadStateBucket.ValueString(),
-		"O11yBucket":                config.O11yBucket.ValueString(),
-		"OrbBillingBucket":          config.OrbBillingBucket.ValueString(),
-		"OrbBillingBucketRegion":    config.OrbBillingBucketRegion.ValueString(),
-		"KubeClusterName":           kubeClusterName,
-		"KafkaClusterName":          config.KafkaClusterName.ValueString(),
-		"RdsControlPlaneClusterName":            rdsControlPlaneClusterName,
-		"Cw2LokiSqsURL":             config.Cw2LokiSqsUrl.ValueString(),
+		"AccountID":                  config.AccountId.ValueString(),
+		"Region":                     cfg.Region,
+		"KmsKeyId":                   config.KmsKeyId.ValueString(),
+		"DynamoDbTable":              config.DynamoDbTableName.ValueString(),
+		"RdsCreds":                   pgControlPlaneCred,
+		"RdsConfig":                  rdsControlPlaneConfig,
+		"MaterializedViewRdsCreds":   materializedViewPgCred,
+		"MaterializedViewRdsConfig":  materializedViewRdsConfig,
+		"DSSecret":                   dsSecrets,
+		"KafkaBrokerList":            strings.Join(kafkaBrokers, ","),
+		"KafkaBrokerListenerPorts":   strings.Join(kafkaListenerPorts, ","),
+		"KafkaRoleARN":               config.KafkaRoleArn.ValueString(),
+		"KafkaRoleExternalId":        config.KafkaRoleExternalId.ValueString(),
+		"ApiHostname":                config.ApiHostname.ValueString(),
+		"ProductArtifactsBucket":     config.ProductArtifactsBucket.ValueString(),
+		"SerdeBucket":                config.SerdeBucket.ValueString(),
+		"SerdeBucketRegion":          cfg.Region,
+		"FunctionsBucket":            config.FunctionsBucket.ValueString(),
+		"FunctionsBucketRegion":      cfg.Region,
+		"WorkloadStateBucket":        config.WorkloadStateBucket.ValueString(),
+		"O11yBucket":                 config.O11yBucket.ValueString(),
+		"OrbBillingBucket":           config.OrbBillingBucket.ValueString(),
+		"OrbBillingBucketRegion":     config.OrbBillingBucketRegion.ValueString(),
+		"KubeClusterName":            kubeClusterName,
+		"KafkaClusterName":           config.KafkaClusterName.ValueString(),
+		"RdsControlPlaneClusterName": rdsControlPlaneClusterName,
+		"Cw2LokiSqsURL":              config.Cw2LokiSqsUrl.ValueString(),
 	})
 	if err != nil {
 		diags.AddError("unable to render deployment config", err.Error())
