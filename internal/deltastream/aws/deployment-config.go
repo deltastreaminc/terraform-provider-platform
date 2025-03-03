@@ -286,6 +286,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		for _, cluster := range dbCluster.DBClusters {
 			mviewDBName = *cluster.DatabaseName
 			mviewPGPort = int(*cluster.Port)
+			// for now pass the single database name for mviews
 			break
 		}
 
@@ -302,6 +303,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 
 		for _, endpoint := range auroraClusterEP.DBClusterEndpoints {
 			mviewPGHostname = *endpoint.Endpoint
+			// for now work with single endpoint for mviews
 			break
 		}
 	}
