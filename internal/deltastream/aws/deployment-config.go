@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -281,7 +280,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 
 		dbCluster, err := rdsClient.DescribeDBClusters(context.TODO(), dbClusterInput)
 		if err != nil {
-			log.Fatalf("Failed to describe DB clusters: %v", err)
+			diags.AddError("failed to describe DB clusters " + config.RdsMViewsResourceID.ValueString(), err.Error())
 		}
 		for _, cluster := range dbCluster.DBClusters {
 			mviewDBName = *cluster.DatabaseName
@@ -297,7 +296,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		// use describe cluster endpoint to identify mview host name
 		auroraClusterEP, err := rdsClient.DescribeDBClusterEndpoints(ctx, auroraClusterEPInput)
 		if err != nil {
-			diags.AddError("failed to describe Aurora DB cluster endpoints for "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to describe Aurora DB cluster endpoints for " + config.RdsMViewsResourceID.ValueString(), err.Error())
 			return
 		}
 
