@@ -123,7 +123,7 @@ const deploymentConfigTmpl = `
   "cw2loki": {
     "eksClusterName": "{{ .KubeClusterName }}",
     "mskClusterName": "{{ .KafkaClusterName }}",
-    "rdsName": "{{ .RdsClusterName}}",
+    "rdsName": "{{ .RdsControlPlaneClusterName}}",
     "importBucketAccount": "{{ .AccountID }}",
     "sqsURL": "{{ .Cw2LokiSqsURL }}"
   },
