@@ -132,7 +132,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"externalSecretsRoleARN":           []byte(config.AwsSecretsManagerRoRoleARN.ValueString()),
 			"infraOperatorRoleARN":             []byte(config.InfraManagerRoleArn.ValueString()),
 			"vaultRoleARN":                     []byte(config.VaultRoleArn.ValueString()),
-			"mviewsRdsCredsSecretName":         []byte(config.RdsMasterPasswordSecret.ValueString()),
+			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"vaultInitRoleARN":                 []byte(config.VaultInitRoleArn.ValueString()),
 			"lokiRoleARN":                      []byte(config.LokiRoleArn.ValueString()),
 			"tempoRoleARN":                     []byte(config.TempoRoleArn.ValueString()),
@@ -197,7 +197,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"customCredentialsRoleARN":      []byte(ptr.Deref(config.CustomCredentialsRoleARN.ValueStringPointer(), "")),
 			"enableCustomCredentialsPlugin": []byte(customCredentialsEnabled),
 			"rdsCACertsSecret":              []byte(config.RdsCACertsSecret.ValueString()),
-			"rdsMasterPasswordSecret":       []byte(config.RdsMasterPasswordSecret.ValueString()),
+			"rdsControlPlanePasswordSecret":       []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
+			"rdsMViewsMasterPasswordSecret":       []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"installationTimestamp":         []byte(config.InstallationTimestamp.ValueString()),
 		}
 		return nil

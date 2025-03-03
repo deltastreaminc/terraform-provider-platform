@@ -34,11 +34,11 @@ const deploymentConfigTmpl = `
   "postgres": {
     "username": "deprecated_use_secret",
     "password": "deprecated_use_secret",
-    "credentialAwsSecret" : "{{ .RdsCreds.AwsSecretName}}",
-    "database": "{{ .RdsConfig.Database }}",
+    "credentialAwsSecret" : "{{ .RdsControlPlaneCreds.AwsSecretName}}",
+    "database": "{{ .RdsControlPlaneConfig.Database }}",
     "sslMode": "verify-full",
-    "host": "{{ .RdsConfig.Host }}",
-    "port": {{ .RdsConfig.Port }}
+    "host": "{{ .RdsControlPlaneConfig.Host }}",
+    "port": {{ .RdsControlPlaneConfig.Port }}
   },
   "kafka": {
     "hosts": "{{ .KafkaBrokerList }}",
@@ -150,7 +150,7 @@ const deploymentConfigTmpl = `
     "database": "{{ .MaterializedViewRdsConfig.Database }}",
     "sslMode": "verify-full",
     "host": "{{ .MaterializedViewRdsConfig.Host }}",
-    "port": {{ .RdsConfig.Port }}
+    "port": {{ .MaterializedViewRdsConfig.Port }}
   },
   "interactiveKafka": {
     "hosts": "{{ .KafkaBrokerList }}",
@@ -231,45 +231,54 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		return
 	}
 
-	// Get Postgres credentials
+	// Get Control plane Postgres credentials
 	secretsmanagerClient := secretsmanager.NewFromConfig(cfg)
-	rdsSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsMasterPasswordSecret.ValueString())
-	rdsCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
-		SecretId: ptr.To(rdsSecretArn),
+	rdsControlPlaneSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsControlPlaneMasterPasswordSecret.ValueString())
+	rdsControlPlaneCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: ptr.To(rdsControlPlaneSecretArn),
 	})
 	if err != nil {
-		diags.AddError("unable to read rds credentials "+rdsSecretArn, err.Error())
+		diags.AddError("unable to read rds credentials "+rdsControlPlaneSecretArn, err.Error())
 		return
 	}
 
-	pgCred := &PostgresCredSecret{}
-	if err := json.Unmarshal([]byte(ptr.Deref(rdsCred.SecretString, string(rdsCred.SecretBinary))), pgCred); err != nil {
+	pgControlPlaneCred := &PostgresCredSecret{}
+	if err := json.Unmarshal([]byte(ptr.Deref(rdsControlPlaneCred.SecretString, string(rdsControlPlaneCred.SecretBinary))), pgControlPlaneCred); err != nil {
 		diags.AddError("unable to unmarshal rds credentials", err.Error())
 		return
 	}
-	pgCred.AwsSecretName = config.RdsMasterPasswordSecret.ValueString()
+	pgControlPlaneCred.AwsSecretName = config.RdsControlPlaneMasterPasswordSecret.ValueString()
 
-	rdsConfig := &PostgresHostConfig{
-		Host:     config.RdsHostName.ValueString(),
-		Port:     int(config.RdsHostPort.ValueInt64()),
-		Database: config.RdsDatabaseName.ValueString(),
+	rdsControlPlaneConfig := &PostgresHostConfig{
+		Host:     config.RdsControlPlaneHostName.ValueString(),
+		Port:     int(config.RdsControlPlaneHostPort.ValueInt64()),
+		Database: config.RdsControlPlaneDatabaseName.ValueString(),
 	}
 
-	// pass materialized View Rds Config
-	// note we will separate out the materialized view RDS from control plane RDS to avoid impact of materialized views queries on control plane workflows
-	// right now testing with same Rds instance
+
+	// Get MViews Postgres credentials
+	rdsMViewsSecretArn := fmt.Sprintf("%s:secret:%s", util.GetARNForService(ctx, cfg, config, "secretsmanager"), config.RdsMViewsMasterPasswordSecret.ValueString())
+	rdsMViewsCred, err := secretsmanagerClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: ptr.To(rdsMViewsSecretArn),
+	})
+	if err != nil {
+		diags.AddError("unable to read rds credentials "+rdsControlPlaneSecretArn, err.Error())
+		return
+	}
+
+	// materialized View Rds Config
 	materializedViewRdsConfig := &PostgresHostConfig{
-		Host:     config.RdsHostName.ValueString(),
-		Port:     int(config.RdsHostPort.ValueInt64()),
-		Database: config.RdsDatabaseName.ValueString(),
+		Host:     config.RdsMViewsHostName.ValueString(),
+		Port:     int(config.RdsMViewsHostPort.ValueInt64()),
+		Database: config.RdsMViewsDatabaseName.ValueString(),
 	}
 	materializedViewPgCred := &PostgresCredSecret{}
 	// note require separate creds for materialized views
-	if err := json.Unmarshal([]byte(ptr.Deref(rdsCred.SecretString, string(rdsCred.SecretBinary))), materializedViewPgCred); err != nil {
+	if err := json.Unmarshal([]byte(ptr.Deref(rdsMViewsCred.SecretString, string(rdsMViewsCred.SecretBinary))), materializedViewPgCred); err != nil {
 		diags.AddError("unable to unmarshal rds credentials", err.Error())
 		return
 	}
-	materializedViewPgCred.AwsSecretName = config.RdsMasterPasswordSecret.ValueString()
+	materializedViewPgCred.AwsSecretName = config.RdsMViewsMasterPasswordSecret.ValueString()
 
 	tmpl, err := template.New("deploymentConfig").Parse(deploymentConfigTmpl)
 	if err != nil {
@@ -295,15 +304,15 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		return
 	}
 
-	rdsClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsResourceID.ValueString())
+	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
 		"AccountID":                 config.AccountId.ValueString(),
 		"Region":                    cfg.Region,
 		"KmsKeyId":                  config.KmsKeyId.ValueString(),
 		"DynamoDbTable":             config.DynamoDbTableName.ValueString(),
-		"RdsCreds":                  pgCred,
-		"RdsConfig":                 rdsConfig,
+		"RdsCreds":                  pgControlPlaneCred,
+		"RdsConfig":                 rdsControlPlaneConfig,
 		"MaterializedViewRdsCreds":  materializedViewPgCred,
 		"MaterializedViewRdsConfig": materializedViewRdsConfig,
 		"DSSecret":                  dsSecrets,
@@ -323,7 +332,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		"OrbBillingBucketRegion":    config.OrbBillingBucketRegion.ValueString(),
 		"KubeClusterName":           kubeClusterName,
 		"KafkaClusterName":          config.KafkaClusterName.ValueString(),
-		"RdsClusterName":            rdsClusterName,
+		"RdsControlPlaneClusterName":            rdsControlPlaneClusterName,
 		"Cw2LokiSqsURL":             config.Cw2LokiSqsUrl.ValueString(),
 	})
 	if err != nil {
