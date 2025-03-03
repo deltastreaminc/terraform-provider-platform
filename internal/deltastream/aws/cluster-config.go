@@ -197,7 +197,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"customCredentialsRoleARN":      []byte(ptr.Deref(config.CustomCredentialsRoleARN.ValueStringPointer(), "")),
 			"enableCustomCredentialsPlugin": []byte(customCredentialsEnabled),
 			"rdsCACertsSecret":              []byte(config.RdsCACertsSecret.ValueString()),
-			"rdsControlPlanePasswordSecret":       []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
+			"rdsControlPlaneMasterPasswordSecret":       []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
 			"rdsMViewsMasterPasswordSecret":       []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"installationTimestamp":         []byte(config.InstallationTimestamp.ValueString()),
 		}
