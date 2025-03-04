@@ -271,8 +271,10 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		// Use AWS RDS client to identify dbname, endpoints and ports
 		rdsClient := rds.NewFromConfig(cfg)
 
+		rdsMViewAuroraClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsMViewsResourceID.ValueString())
+
 		dbClusterInput := &rds.DescribeDBClustersInput{
-			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+			DBClusterIdentifier: aws.String(rdsMViewAuroraClusterName),
 		}
 
 		dbCluster, err := rdsClient.DescribeDBClusters(ctx, dbClusterInput)
