@@ -279,7 +279,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 
 		dbCluster, err := rdsClient.DescribeDBClusters(ctx, dbClusterInput)
 		if err != nil {
-			diags.AddError("failed to describe DB clusters "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to describe DB clusters "+rdsMViewAuroraClusterName, err.Error())
 		}
 		mviewDBName = ""
 		mviewPGHostname = ""
@@ -293,18 +293,18 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		}
 
 		if mviewDBName == "" {
-			diags.AddError("failed to get database name for Aurora DB cluster "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to get database name for Aurora DB cluster "+rdsMViewAuroraClusterName, err.Error())
 			return
 		}
 
 		auroraClusterEPInput := &rds.DescribeDBClusterEndpointsInput{
-			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+			DBClusterIdentifier: aws.String(rdsMViewAuroraClusterName),
 		}
 
 		// use describe cluster endpoint to identify mview host name
 		auroraClusterEP, err := rdsClient.DescribeDBClusterEndpoints(ctx, auroraClusterEPInput)
 		if err != nil {
-			diags.AddError("failed to describe Aurora DB cluster endpoints for "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to describe Aurora DB cluster endpoints for "+rdsMViewAuroraClusterName, err.Error())
 			return
 		}
 
@@ -316,7 +316,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		}
 
 		if mviewPGHostname == "" {
-			diags.AddError("failed to get WRITER Endpoint for Aurora DB cluster "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to get WRITER Endpoint for Aurora DB cluster "+rdsMViewAuroraClusterName, err.Error())
 			return
 		}
 	}
