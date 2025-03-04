@@ -169,9 +169,6 @@ const deploymentConfigTmpl = `
   }
 }`
 
-// ^^^ TODO: update materializeViewPostgres to new rds instance
-// update interactiveKafka to use separate IAM role arn for interactive topics
-
 type DSSecrets struct {
 	GoogleClientID      string    `json:"googleClientID"`
 	GoogleClientSecret  string    `json:"googleClientSecret"`
@@ -274,19 +271,30 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		// Use AWS RDS client to identify dbname, endpoints and ports
 		rdsClient := rds.NewFromConfig(cfg)
 
+		rdsMViewAuroraClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsMViewsResourceID.ValueString())
+
 		dbClusterInput := &rds.DescribeDBClustersInput{
-			DBClusterIdentifier: aws.String(config.RdsMViewsResourceID.ValueString()),
+			DBClusterIdentifier: aws.String(rdsMViewAuroraClusterName),
 		}
 
-		dbCluster, err := rdsClient.DescribeDBClusters(context.TODO(), dbClusterInput)
+		dbCluster, err := rdsClient.DescribeDBClusters(ctx, dbClusterInput)
 		if err != nil {
-			diags.AddError("failed to describe DB clusters " + config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to describe DB clusters "+config.RdsMViewsResourceID.ValueString(), err.Error())
 		}
+		mviewDBName = ""
+		mviewPGHostname = ""
+		mviewPGPort = 0
+
 		for _, cluster := range dbCluster.DBClusters {
 			mviewDBName = *cluster.DatabaseName
 			mviewPGPort = int(*cluster.Port)
 			// for now pass the single database name for mviews
 			break
+		}
+
+		if mviewDBName == "" {
+			diags.AddError("failed to get database name for Aurora DB cluster "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			return
 		}
 
 		auroraClusterEPInput := &rds.DescribeDBClusterEndpointsInput{
@@ -296,14 +304,20 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		// use describe cluster endpoint to identify mview host name
 		auroraClusterEP, err := rdsClient.DescribeDBClusterEndpoints(ctx, auroraClusterEPInput)
 		if err != nil {
-			diags.AddError("failed to describe Aurora DB cluster endpoints for " + config.RdsMViewsResourceID.ValueString(), err.Error())
+			diags.AddError("failed to describe Aurora DB cluster endpoints for "+config.RdsMViewsResourceID.ValueString(), err.Error())
 			return
 		}
 
 		for _, endpoint := range auroraClusterEP.DBClusterEndpoints {
-			mviewPGHostname = *endpoint.Endpoint
-			// for now work with single endpoint for mviews
-			break
+			if strings.ToUpper(*endpoint.EndpointType) == "WRITER" {
+				mviewPGHostname = *endpoint.Endpoint
+				break
+			}
+		}
+
+		if mviewPGHostname == "" {
+			diags.AddError("failed to get WRITER Endpoint for Aurora DB cluster "+config.RdsMViewsResourceID.ValueString(), err.Error())
+			return
 		}
 	}
 	// materialized View Rds Config
