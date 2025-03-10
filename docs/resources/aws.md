@@ -72,6 +72,7 @@ Required:
 - `karpenter_node_role_name` (String) The name of the role to assumed by nodes started by Karpenter.
 - `kms_key_id` (String) The KMS key ID for encrypting credentials store in the dataplane vault.
 - `loki_role_arn` (String) The ARN of the role to assume for managing Loki resources.
+- `materialized_view_store_type` (String) Materialized view store type, one of postgres or clickhouse.
 - `metrics_url` (String) The URL to push metrics.
 - `o11y_bucket` (String) The S3 bucket for storing observability data.
 - `o11y_hostname` (String) The hostname of the observability endpoint.

@@ -127,6 +127,7 @@ type ClusterConfiguration struct {
 	RdsControlPlaneResourceID basetypes.StringValue `tfsdk:"rds_control_plane_resource_id"`
 	RdsMViewsResourceID       basetypes.StringValue `tfsdk:"rds_mviews_resource_id"`
 	RdsMViewsUsingAurora      basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
+	MaterializedViewStoreType basetypes.StringValue `tfsdk:"materialized_view_store_type"`
 
 	Cw2LokiSqsUrl basetypes.StringValue `tfsdk:"cw2loki_sqs_url"`
 
@@ -526,6 +527,12 @@ var Schema = schema.Schema{
 				"rds_mviews_using_aurora": schema.BoolAttribute{
 					Description: "Flag to indicate rds for mviews is aurora cluster.",
 					Required:    true,
+				},
+				"materialized_view_store_type": schema.StringAttribute{
+					Description: "Materialized view store type, one of postgres or clickhouse.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.OneOf("postgres", "clickhouse")},
+
 				},
 				"cw2loki_sqs_url": schema.StringAttribute{
 					Description: "The SQS URL for ingesting CloudWatch data into observability tools.",
