@@ -132,6 +132,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"externalSecretsRoleARN":           []byte(config.AwsSecretsManagerRoRoleARN.ValueString()),
 			"infraOperatorRoleARN":             []byte(config.InfraManagerRoleArn.ValueString()),
 			"vaultRoleARN":                     []byte(config.VaultRoleArn.ValueString()),
+			"mviewStoreType":					[]byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"vaultInitRoleARN":                 []byte(config.VaultInitRoleArn.ValueString()),
 			"lokiRoleARN":                      []byte(config.LokiRoleArn.ValueString()),
