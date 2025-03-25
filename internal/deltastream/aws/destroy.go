@@ -225,6 +225,11 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 		return
 	}
 
+	d.Append(deleteIngressNLB(ctx, kubeClient, "ingress")...)
+	if d.HasError() {
+		return
+	}
+
 	d.Append(deleteKustomization(ctx, kubeClient, "api-server")...)
 	if d.HasError() {
 		return
