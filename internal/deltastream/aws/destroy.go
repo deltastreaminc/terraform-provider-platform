@@ -6,6 +6,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -94,6 +95,122 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 		}
 	}
 	return d
+}
+
+// Newly added part
+func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
+	d := diag.Diagnostics{}
+
+	// Step 1: List all services in the namespace
+	services := &corev1.ServiceList{}
+	if err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+		return kubeClient.List(ctx, services, client.InNamespace(namespace))
+	}); err != nil {
+		d.AddError("Failed to list services in namespace", err.Error())
+		return d
+	}
+
+	nlbKey := "service.beta.kubernetes.io/aws-load-balancer-type"
+	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
+
+	// Step 2: Process deletion protection for each service
+	for _, svc := range services.Items {
+		if svc.Annotations == nil {
+			continue
+		}
+
+		attrVal, hasAttr := svc.Annotations[attrKey]
+		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
+			// Step 2a: Change deletion protection from true to false
+			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
+			if err := kubeClient.Update(ctx, &svc); err != nil {
+				d.AddError(fmt.Sprintf("Failed to update deletion protection for service %s", svc.Name), err.Error())
+				continue
+			}
+
+			// Step 2b: Wait 10 minutes
+			tflog.Debug(ctx, "Waiting 10 minutes after disabling deletion protection", map[string]interface{}{"service": svc.Name})
+			time.Sleep(10 * time.Minute)
+
+			// Step 2c: Verify the annotation was updated
+			refetched := &corev1.Service{}
+			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+				if err := kubeClient.Get(ctx, client.ObjectKey{Name: svc.Name, Namespace: svc.Namespace}, refetched); err != nil {
+					return retry.RetryableError(err)
+				}
+				if val, ok := refetched.Annotations[attrKey]; ok && strings.Contains(val, "deletion_protection.enabled=true") {
+					return retry.RetryableError(fmt.Errorf("deletion protection still enabled for service %s", svc.Name))
+				}
+				return nil
+			})
+			if err != nil {
+				d.AddError(fmt.Sprintf("Deletion protection still present for service %s", svc.Name), err.Error())
+				continue
+			}
+
+			// Step 2d: Delete the annotation key entirely
+			delete(refetched.Annotations, attrKey)
+			if err := kubeClient.Update(ctx, refetched); err != nil {
+				d.AddError(fmt.Sprintf("Failed to remove annotation for service %s", svc.Name), err.Error())
+				continue
+			}
+		}
+	}
+
+	// Step 3: Collect NLB services (after annotation cleanup)
+	nlbServices := []corev1.Service{}
+	for _, svc := range services.Items {
+		if svc.Annotations != nil {
+			if _, ok := svc.Annotations[nlbKey]; ok {
+				nlbServices = append(nlbServices, svc)
+			}
+		}
+	}
+
+	// Step 4: Delete NLB services
+	for _, svc := range nlbServices {
+		if err := kubeClient.Delete(ctx, &svc); err != nil {
+			d.AddError(fmt.Sprintf("Failed to delete NLB service %s", svc.Name), err.Error())
+		}
+	}
+
+	// Step 5: Wait up to 15 minutes for NLB services to be fully deleted
+	tflog.Debug(ctx, "Waiting up to 15 minutes for all NLB services to be deleted...")
+	timeout := time.After(15 * time.Minute)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			d.AddError("Context cancelled while waiting for NLB service deletion", ctx.Err().Error())
+			return d
+		case <-timeout:
+			d.AddError("Timeout while waiting for NLB services to be deleted", "Some services may still exist")
+			return d
+		case <-ticker.C:
+			remaining := &corev1.ServiceList{}
+			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
+				d.AddError("Failed to list services during deletion wait", err.Error())
+				return d
+			}
+
+			hasNLB := false
+			for _, svc := range remaining.Items {
+				if svc.Annotations != nil {
+					if _, ok := svc.Annotations[nlbKey]; ok {
+						hasNLB = true
+						break
+					}
+				}
+			}
+
+			if !hasNLB {
+				tflog.Debug(ctx, "All NLB services successfully deleted.")
+				return d
+			}
+		}
+	}
 }
 
 func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d diag.Diagnostics) {
