@@ -111,7 +111,7 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
 
-	// Step 2: Process deletion protection for each service
+	// Step 2: Process deletion protection for relevant services
 	for _, svc := range services.Items {
 		if svc.Annotations == nil {
 			continue
@@ -119,24 +119,32 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 		attrVal, hasAttr := svc.Annotations[attrKey]
 		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
-			// Step 2a: Change deletion protection from true to false
+			// Step 2a: Disable deletion protection
 			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
 			if err := kubeClient.Update(ctx, &svc); err != nil {
 				d.AddError(fmt.Sprintf("Failed to update deletion protection for service %s", svc.Name), err.Error())
 				continue
 			}
 
-			// Step 2b: Wait 20 seconds
+			// Step 2b: Wait 20s with context awareness
 			tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", map[string]interface{}{"service": svc.Name})
-			time.Sleep(20 * time.Second)
-
+			select {
+			case <-time.After(20 * time.Second):
+			case <-ctx.Done():
+				d.AddError("Context cancelled during deletion protection wait", ctx.Err().Error())
+				return d
+			}
 		}
 	}
 
-	// Step 3: Delete all services
+	// Step 3: Delete only services with the specific annotation
 	for _, svc := range services.Items {
-		if err := kubeClient.Delete(ctx, &svc); err != nil {
-			d.AddError(fmt.Sprintf("Failed to delete service %s", svc.Name), err.Error())
+		if svc.Annotations != nil {
+			if _, ok := svc.Annotations[attrKey]; ok {
+				if err := kubeClient.Delete(ctx, &svc); err != nil {
+					d.AddError(fmt.Sprintf("Failed to delete service %s", svc.Name), err.Error())
+				}
+			}
 		}
 	}
 
@@ -147,8 +155,8 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		return d
 	}
 
-	// Step 5: Wait 2 minutes for all services to be gone
-	tflog.Debug(ctx, "Waiting 2 minutes for all services to be deleted...")
+	// Step 5: Wait for all services to be gone
+	tflog.Debug(ctx, "Waiting 2 minutes for services with the annotation to be deleted...")
 	timeout := time.After(2 * time.Minute)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -168,8 +176,18 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 				return d
 			}
 
-			if len(remaining.Items) == 0 {
-				tflog.Debug(ctx, "All services successfully deleted.")
+			anyWithAnnotation := false
+			for _, svc := range remaining.Items {
+				if svc.Annotations != nil {
+					if _, ok := svc.Annotations[attrKey]; ok {
+						anyWithAnnotation = true
+						break
+					}
+				}
+			}
+
+			if !anyWithAnnotation {
+				tflog.Debug(ctx, "All services with deletion protection annotation successfully deleted.")
 				return d
 			}
 		}
