@@ -148,14 +148,7 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		}
 	}
 
-	// Step 4: Delete namespace
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
-	if err := kubeClient.Delete(ctx, ns); err != nil {
-		d.AddError(fmt.Sprintf("Failed to delete namespace %s", namespace), err.Error())
-		return d
-	}
-
-	// Step 5: Wait for all services to be gone
+	// Step 4: Wait for all services to be gone
 	tflog.Debug(ctx, "Waiting 2 minutes for services with the annotation to be deleted...")
 	timeout := time.After(2 * time.Minute)
 	ticker := time.NewTicker(10 * time.Second)
