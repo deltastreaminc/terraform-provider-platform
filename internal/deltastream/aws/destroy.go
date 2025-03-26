@@ -97,7 +97,6 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 	return d
 }
 
-// Newly added part
 func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
 	d := diag.Diagnostics{}
 
@@ -110,7 +109,6 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		return d
 	}
 
-	nlbKey := "service.beta.kubernetes.io/aws-load-balancer-type"
 	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
 
 	// Step 2: Process deletion protection for each service
@@ -128,9 +126,9 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 				continue
 			}
 
-			// Step 2b: Wait 10 minutes
-			tflog.Debug(ctx, "Waiting 10 minutes after disabling deletion protection", map[string]interface{}{"service": svc.Name})
-			time.Sleep(10 * time.Minute)
+			// Step 2b: Wait 20 seconds
+			tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", map[string]interface{}{"service": svc.Name})
+			time.Sleep(20 * time.Second)
 
 			// Step 2c: Verify the annotation was updated
 			refetched := &corev1.Service{}
@@ -157,36 +155,33 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		}
 	}
 
-	// Step 3: Collect NLB services (after annotation cleanup)
-	nlbServices := []corev1.Service{}
+	// Step 3: Delete all services
 	for _, svc := range services.Items {
-		if svc.Annotations != nil {
-			if _, ok := svc.Annotations[nlbKey]; ok {
-				nlbServices = append(nlbServices, svc)
-			}
-		}
-	}
-
-	// Step 4: Delete NLB services
-	for _, svc := range nlbServices {
 		if err := kubeClient.Delete(ctx, &svc); err != nil {
-			d.AddError(fmt.Sprintf("Failed to delete NLB service %s", svc.Name), err.Error())
+			d.AddError(fmt.Sprintf("Failed to delete service %s", svc.Name), err.Error())
 		}
 	}
 
-	// Step 5: Wait up to 15 minutes for NLB services to be fully deleted
-	tflog.Debug(ctx, "Waiting up to 15 minutes for all NLB services to be deleted...")
-	timeout := time.After(15 * time.Minute)
+	// Step 4: Delete namespace
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	if err := kubeClient.Delete(ctx, ns); err != nil {
+		d.AddError(fmt.Sprintf("Failed to delete namespace %s", namespace), err.Error())
+		return d
+	}
+
+	// Step 5: Wait 2 minutes for all services to be gone
+	tflog.Debug(ctx, "Waiting 2 minutes for all services to be deleted...")
+	timeout := time.After(2 * time.Minute)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			d.AddError("Context cancelled while waiting for NLB service deletion", ctx.Err().Error())
+			d.AddError("Context cancelled while waiting for service deletion", ctx.Err().Error())
 			return d
 		case <-timeout:
-			d.AddError("Timeout while waiting for NLB services to be deleted", "Some services may still exist")
+			d.AddError("Timeout while waiting for services to be deleted", "Some services may still exist")
 			return d
 		case <-ticker.C:
 			remaining := &corev1.ServiceList{}
@@ -195,18 +190,8 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 				return d
 			}
 
-			hasNLB := false
-			for _, svc := range remaining.Items {
-				if svc.Annotations != nil {
-					if _, ok := svc.Annotations[nlbKey]; ok {
-						hasNLB = true
-						break
-					}
-				}
-			}
-
-			if !hasNLB {
-				tflog.Debug(ctx, "All NLB services successfully deleted.")
+			if len(remaining.Items) == 0 {
+				tflog.Debug(ctx, "All services successfully deleted.")
 				return d
 			}
 		}
