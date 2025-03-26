@@ -130,28 +130,6 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 			tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", map[string]interface{}{"service": svc.Name})
 			time.Sleep(20 * time.Second)
 
-			// Step 2c: Verify the annotation was updated
-			refetched := &corev1.Service{}
-			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
-				if err := kubeClient.Get(ctx, client.ObjectKey{Name: svc.Name, Namespace: svc.Namespace}, refetched); err != nil {
-					return retry.RetryableError(err)
-				}
-				if val, ok := refetched.Annotations[attrKey]; ok && strings.Contains(val, "deletion_protection.enabled=true") {
-					return retry.RetryableError(fmt.Errorf("deletion protection still enabled for service %s", svc.Name))
-				}
-				return nil
-			})
-			if err != nil {
-				d.AddError(fmt.Sprintf("Deletion protection still present for service %s", svc.Name), err.Error())
-				continue
-			}
-
-			// Step 2d: Delete the annotation key entirely
-			delete(refetched.Annotations, attrKey)
-			if err := kubeClient.Update(ctx, refetched); err != nil {
-				d.AddError(fmt.Sprintf("Failed to remove annotation for service %s", svc.Name), err.Error())
-				continue
-			}
 		}
 	}
 
