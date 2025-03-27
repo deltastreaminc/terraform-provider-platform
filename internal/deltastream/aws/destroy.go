@@ -100,7 +100,7 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
 	d := diag.Diagnostics{}
 
-	// Step 1: List all services in the namespace
+	// Step 1: List all services in this namespace
 	services := &corev1.ServiceList{}
 	if err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
 		return kubeClient.List(ctx, services, client.InNamespace(namespace))
