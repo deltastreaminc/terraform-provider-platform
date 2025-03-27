@@ -119,22 +119,27 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 		attrVal, hasAttr := svc.Annotations[attrKey]
 		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
+
 			// Step 2a: Disable deletion protection
 			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
-			if err := kubeClient.Update(ctx, &svc); err != nil {
+
+			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+				return kubeClient.Update(ctx, &svc)
+			})
+			if err != nil {
 				d.AddError(fmt.Sprintf("Failed to update deletion protection for service %s", svc.Name), err.Error())
 				continue
 			}
-
-			// Step 2b: Wait 20s with context awareness
-			tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", map[string]interface{}{"service": svc.Name})
-			select {
-			case <-time.After(20 * time.Second):
-			case <-ctx.Done():
-				d.AddError("Context cancelled during deletion protection wait", ctx.Err().Error())
-				return d
-			}
 		}
+	}
+
+	// Step 2b: Wait 20s with context awareness (only once after all updates)
+	tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", nil)
+
+	select {
+	case <-ctx.Done():
+		tflog.Warn(ctx, "Context cancelled while waiting")
+	case <-time.After(20 * time.Second):
 	}
 
 	// Step 3: Delete only services with the specific annotation
