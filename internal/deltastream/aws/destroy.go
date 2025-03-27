@@ -6,6 +6,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -96,6 +97,101 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 	return d
 }
 
+func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
+	d := diag.Diagnostics{}
+
+	// Step 1: List all services in this namespace
+	services := &corev1.ServiceList{}
+	if err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+		return kubeClient.List(ctx, services, client.InNamespace(namespace))
+	}); err != nil {
+		d.AddError("Failed to list services in namespace", err.Error())
+		return d
+	}
+
+	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
+
+	// Step 2: Process deletion protection for relevant services
+	for _, svc := range services.Items {
+		if svc.Annotations == nil {
+			continue
+		}
+
+		attrVal, hasAttr := svc.Annotations[attrKey]
+		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
+
+			// Step 2a: Disable deletion protection
+			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
+
+			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+				return kubeClient.Update(ctx, &svc)
+			})
+			if err != nil {
+				d.AddError(fmt.Sprintf("Failed to update deletion protection for service %s", svc.Name), err.Error())
+				continue
+			}
+		}
+	}
+
+	// Step 2b: Wait 20s with context awareness (only once after all updates)
+	tflog.Debug(ctx, "Waiting 20 seconds after disabling deletion protection", nil)
+
+	select {
+	case <-ctx.Done():
+		tflog.Warn(ctx, "Context cancelled while waiting")
+	case <-time.After(20 * time.Second):
+	}
+
+	// Step 3: Delete only services with the specific annotation
+	for _, svc := range services.Items {
+		if svc.Annotations != nil {
+			if _, ok := svc.Annotations[attrKey]; ok {
+				if err := kubeClient.Delete(ctx, &svc); err != nil {
+					d.AddError(fmt.Sprintf("Failed to delete service %s", svc.Name), err.Error())
+				}
+			}
+		}
+	}
+
+	// Step 4: Wait for all services to be gone
+	tflog.Debug(ctx, "Waiting 2 minutes for services with the annotation to be deleted...")
+	timeout := time.After(2 * time.Minute)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			d.AddError("Context cancelled while waiting for service deletion", ctx.Err().Error())
+			return d
+		case <-timeout:
+			d.AddError("Timeout while waiting for services to be deleted", "Some services may still exist")
+			return d
+		case <-ticker.C:
+			remaining := &corev1.ServiceList{}
+			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
+				d.AddError("Failed to list services during deletion wait", err.Error())
+				return d
+			}
+
+			anyWithAnnotation := false
+			for _, svc := range remaining.Items {
+				if svc.Annotations != nil {
+					if _, ok := svc.Annotations[attrKey]; ok {
+						anyWithAnnotation = true
+						break
+					}
+				}
+			}
+
+			if !anyWithAnnotation {
+				tflog.Debug(ctx, "All services with deletion protection annotation successfully deleted.")
+				return d
+			}
+		}
+	}
+}
+
 func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d diag.Diagnostics) {
 	kubeClient, err := util.GetKubeClient(ctx, cfg, dp)
 	if err != nil {
@@ -104,6 +200,11 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	d.Append(suspendKustomization(ctx, kubeClient, "dataplane")...)
+	if d.HasError() {
+		return
+	}
+
+	d.Append(deleteIngressNLB(ctx, kubeClient, "ingress")...)
 	if d.HasError() {
 		return
 	}
@@ -195,4 +296,5 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	return
+
 }
