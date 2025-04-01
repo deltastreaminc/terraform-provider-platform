@@ -2,7 +2,7 @@ module github.com/deltastreaminc/terraform-provider-platform
 
 go 1.23.2
 
-toolchain go1.24.0
+toolchain go1.24.1
 
 require (
 	github.com/alitto/pond v1.8.3
@@ -11,8 +11,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.18
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.156.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.27.4
-	github.com/aws/aws-sdk-go-v2/service/eks v1.43.1
+	github.com/aws/aws-sdk-go-v2/service/eks v1.63.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.32.5
+	github.com/aws/aws-sdk-go-v2/service/rds v1.94.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.53.1
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.12
@@ -43,7 +44,6 @@ require (
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/rds v1.94.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/containerd/errdefs v0.3.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
