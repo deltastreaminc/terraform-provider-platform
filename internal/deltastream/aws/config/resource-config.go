@@ -442,12 +442,12 @@ var Schema = schema.Schema{
 				"o11y_subnet_mode": schema.StringAttribute{
 					Description: "The subnet mode for observability endpoint.",
 					Required:    true,
-					Validators:  []validator.String{stringvalidator.OneOf("public", "private")},
+					Validators:  []validator.String{stringvalidator.OneOf("public", "private", "none")},
 				},
 				"o11y_tls_mode": schema.StringAttribute{
 					Description: "The TLS/HTTPS mode for observability endpoint.",
 					Required:    true,
-					Validators:  []validator.String{stringvalidator.OneOf("awscert", "acme", "disabled")},
+					Validators:  []validator.String{stringvalidator.OneOf("awscert", "acme", "disabled", "none")},
 				},
 				"o11y_tls_certificate_arn": schema.StringAttribute{
 					Description: "The ARN of the TLS certificate for the observability endpoint.",
