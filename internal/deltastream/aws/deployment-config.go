@@ -168,7 +168,7 @@ const deploymentConfigTmpl = `
 	"clientSecret": "{{ .DSSecret.Tailscale.ClientSecret }}"
   },
   "trialConfig": {
-	"trialStoreRegion": "{{ .DSSecret.TrialConfig.TrialStoreRegion }}",
+    "trialStoreRegion": "{{ .DSSecret.TrialConfig.TrialStoreRegion }}",
     "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
     "trialStoreSQSRegion": "{{ .DSSecret.TrialConfig.TrialStoreSQSRegion }}",
     "trialStoreKafkaUri": "{{ .DSSecret.TrialConfig.TrialStoreKafkaUri }}",
