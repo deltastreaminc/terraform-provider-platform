@@ -166,6 +166,13 @@ const deploymentConfigTmpl = `
   "tailscale": {
 	"clientId": "{{ .DSSecret.Tailscale.ClientId }}",
 	"clientSecret": "{{ .DSSecret.Tailscale.ClientSecret }}"
+  },
+  "trialConfig": {
+	"trialStoreRegion": "{{ .DSSecret.TrialConfig.TrialStoreRegion }}",
+    "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
+    "trialStoreSQSRegion": "{{ .DSSecret.TrialConfig.TrialStoreSQSRegion }}",
+    "trialStoreKafkaUri": "{{ .DSSecret.TrialConfig.TrialStoreKafkaUri }}",
+    "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}"
   }
 }`
 
@@ -178,6 +185,15 @@ type DSSecrets struct {
 	SendgridApiKey      string    `json:"sendgridApiKey"`
 	PostHogPublicId     string    `json:"posthogPublicID"`
 	Tailscale           Tailscale `json:"tailscale"`
+	TrialConfig         TrialConfig `json:"trialConfig"`
+}
+
+type TrialConfig struct {
+	TrialStoreRegion       string `json:"trialStoreRegion"`
+	TrialStoreSQSUrl       string `json:"trialStoreSQSUrl"`
+	TrialStoreSQSRegion    string `json:"trialStoreSQSRegion"`
+	TrialStoreKafkaUri     string `json:"trialStoreKafkaUri"`
+	TrialStoreHashFunction string `json:"trialStoreHashFunction"`
 }
 
 type Auth0 struct {
