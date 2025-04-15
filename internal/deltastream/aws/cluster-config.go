@@ -109,6 +109,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"infraAccountID":                   []byte(fmt.Sprintf("\"%s\"", config.AccountId.ValueString())),
 			"infraID":                          []byte(config.InfraId.ValueString()),
 			"infraName":                        []byte("ds-" + config.InfraId.ValueString()),
+			"infraType":                        []byte(config.InfraType.ValueString()),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
 			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),

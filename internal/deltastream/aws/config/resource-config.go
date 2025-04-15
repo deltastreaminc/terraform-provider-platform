@@ -50,6 +50,7 @@ type ClusterConfiguration struct {
 
 	AccountId       basetypes.StringValue `tfsdk:"account_id"`
 	InfraId         basetypes.StringValue `tfsdk:"infra_id"`
+	InfraType       basetypes.StringValue `tfsdk:"infra_type"`
 	EksResourceId   basetypes.StringValue `tfsdk:"eks_resource_id"`
 	ClusterIndex    basetypes.Int64Value  `tfsdk:"cluster_index"`
 	ProductVersion  basetypes.StringValue `tfsdk:"product_version"`
@@ -210,6 +211,11 @@ var Schema = schema.Schema{
 				"infra_id": schema.StringAttribute{
 					Description: "The infra ID of the DeltaStream dataplane (provided by DeltaStream).",
 					Required:    true,
+				},
+				"infra_type": schema.StringAttribute{
+					Description: "The infra Type for DeltaStream dataplane.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.OneOf("trial_multi_tenant", "byoc", "dedicated")},
 				},
 				"eks_resource_id": schema.StringAttribute{
 					Description: "The resource ID of the DeltaStream dataplane (provided by DeltaStream).",
