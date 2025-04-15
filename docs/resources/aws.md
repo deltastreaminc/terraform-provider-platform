@@ -61,6 +61,7 @@ Required:
 - `functions_bucket` (String) The S3 bucket for storing Functiosn jar artifacts.
 - `infra_id` (String) The infra ID of the DeltaStream dataplane (provided by DeltaStream).
 - `infra_manager_role_arn` (String) The ARN of the role to assume for managing infra resources.
+- `infra_type` (String) The infra Type for DeltaStream dataplane.
 - `installation_timestamp` (String) Installation timestamp provided by caller.
 - `interruption_queue_name` (String) The name of the SQS queue for handling interruption events.
 - `kafka_cluster_name` (String) The name of the kafka cluster.
