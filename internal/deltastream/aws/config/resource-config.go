@@ -145,6 +145,8 @@ type ClusterConfiguration struct {
 	RdsMViewsHostName             basetypes.StringValue `tfsdk:"rds_mviews_host_name"`
 	RdsMViewsHostPort             basetypes.Int64Value  `tfsdk:"rds_mviews_host_port"`
 
+	Auth0LoginConfig basetypes.StringValue `tfsdk:"auth0_login_config"`
+
 	InstallationTimestamp basetypes.StringValue `tfsdk:"installation_timestamp"`
 }
 
@@ -538,7 +540,6 @@ var Schema = schema.Schema{
 					Description: "Materialized view store type, one of postgres or clickhouse.",
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.OneOf("postgres", "clickhouse")},
-
 				},
 				"cw2loki_sqs_url": schema.StringAttribute{
 					Description: "The SQS URL for ingesting CloudWatch data into observability tools.",
@@ -594,6 +595,11 @@ var Schema = schema.Schema{
 				"rds_mviews_host_port": schema.Int64Attribute{
 					Description: "RDS MViews host name",
 					Optional:    true,
+				},
+
+				"auth0_login_config": schema.StringAttribute{
+					Description: "Auth0 Login Config in base64 string format representing options as json, example: {user_pass_enabled: true, sso_enabled: true, oauth_google_enabled: true}",
+					Required:    true,
 				},
 
 				"installation_timestamp": schema.StringAttribute{
