@@ -135,6 +135,7 @@ const deploymentConfigTmpl = `
 	"audience": "{{ .DSSecret.Auth0Api.Audience }}",
 	"domain": "{{ .DSSecret.Auth0Api.Domain }}",
 	"clientId": "{{ .DSSecret.Auth0Api.ClientId }}"
+	"loginConfig": "{{ .Auth0LoginConfig }}"
   },
   "auth0cli": {
 	"audience": "{{ .DSSecret.Auth0Cli.Audience }}",
@@ -177,14 +178,14 @@ const deploymentConfigTmpl = `
 }`
 
 type DSSecrets struct {
-	GoogleClientID      string    `json:"googleClientID"`
-	GoogleClientSecret  string    `json:"googleClientSecret"`
-	PagerdutyServiceKey string    `json:"pagerdutyServiceKey"`
-	Auth0Api            Auth0     `json:"auth0api"`
-	Auth0Cli            Auth0     `json:"auth0cli"`
-	SendgridApiKey      string    `json:"sendgridApiKey"`
-	PostHogPublicId     string    `json:"posthogPublicID"`
-	Tailscale           Tailscale `json:"tailscale"`
+	GoogleClientID      string      `json:"googleClientID"`
+	GoogleClientSecret  string      `json:"googleClientSecret"`
+	PagerdutyServiceKey string      `json:"pagerdutyServiceKey"`
+	Auth0Api            Auth0       `json:"auth0api"`
+	Auth0Cli            Auth0       `json:"auth0cli"`
+	SendgridApiKey      string      `json:"sendgridApiKey"`
+	PostHogPublicId     string      `json:"posthogPublicID"`
+	Tailscale           Tailscale   `json:"tailscale"`
 	TrialConfig         TrialConfig `json:"trialConfig"`
 }
 
@@ -385,6 +386,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		"RdsControlPlaneConfig":      rdsControlPlaneConfig,
 		"MaterializedViewRdsCreds":   materializedViewPgCred,
 		"MaterializedViewRdsConfig":  materializedViewRdsConfig,
+		"Auth0LoginConfig":           config.Auth0LoginConfig,
 		"DSSecret":                   dsSecrets,
 		"KafkaBrokerList":            strings.Join(kafkaBrokers, ","),
 		"KafkaBrokerListenerPorts":   strings.Join(kafkaListenerPorts, ","),

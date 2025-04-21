@@ -44,6 +44,7 @@ Required:
 - `api_hostname` (String) The hostname of the dataplane API endpoint.
 - `api_subnet_mode` (String) The subnet mode for dataplane API endpoint.
 - `api_tls_mode` (String) The TLS/HTTPS mode for dataplane API endpoint.
+- `auth0_login_config` (String) Auth0 Login Config in base64 string format representing options as json, example: {user_pass_enabled: true, sso_enabled: true, oauth_google_enabled: true}
 - `aws_load_balancer_controller_role_arn` (String) The ARN of the role to assume for managing AWS Load Balancer resources.
 - `aws_secrets_manager_ro_role_arn` (String) The ARN of the role to assume for reading secrets from AWS secrets manager.
 - `console_hostname` (String) The hostname of the DeltaStream console
