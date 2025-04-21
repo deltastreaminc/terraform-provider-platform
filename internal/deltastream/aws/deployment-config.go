@@ -134,7 +134,7 @@ const deploymentConfigTmpl = `
   "auth0": {
 	"audience": "{{ .DSSecret.Auth0Api.Audience }}",
 	"domain": "{{ .DSSecret.Auth0Api.Domain }}",
-	"clientId": "{{ .DSSecret.Auth0Api.ClientId }}"
+	"clientId": "{{ .DSSecret.Auth0Api.ClientId }}",
 	"loginConfig": "{{ .Auth0LoginConfig }}"
   },
   "auth0cli": {
