@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -97,8 +99,8 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 	return d
 }
 
-func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) (d diag.Diagnostics) {
-	d = diag.Diagnostics{}
+func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
+	d := diag.Diagnostics{}
 
 	// Step 1: List all services in this namespace
 	services := &corev1.ServiceList{}
@@ -106,7 +108,7 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		return kubeClient.List(ctx, services, client.InNamespace(namespace))
 	}); err != nil {
 		d.AddError("Failed to list services in namespace", err.Error())
-		return
+		return d
 	}
 
 	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
@@ -119,7 +121,8 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 		attrVal, hasAttr := svc.Annotations[attrKey]
 		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
-			// Step 2a: Disable deletion protection by updating the existing annotation
+
+			// Step 2a: Disable deletion protection
 			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
 
 			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
@@ -158,20 +161,19 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	servicesDeleted := false
-	for !servicesDeleted {
+	for {
 		select {
 		case <-ctx.Done():
 			d.AddError("Context cancelled while waiting for service deletion", ctx.Err().Error())
-			return
+			return d
 		case <-timeout:
 			d.AddError("Timeout while waiting for services to be deleted", "Some services may still exist")
-			return
+			return d
 		case <-ticker.C:
 			remaining := &corev1.ServiceList{}
 			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
 				d.AddError("Failed to list services during deletion wait", err.Error())
-				return
+				return d
 			}
 
 			anyWithAnnotation := false
@@ -186,51 +188,68 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 			if !anyWithAnnotation {
 				tflog.Debug(ctx, "All services with deletion protection annotation successfully deleted.")
-				servicesDeleted = true
+				return d
+			}
+		}
+	}
+}
+
+// verifyNLBDeletion checks if any NLBs with the cluster tag still exist in AWS
+func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cfg aws.Config, clusterName string) (d diag.Diagnostics) {
+	d = diag.Diagnostics{}
+
+	// Create ELB client
+	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+
+	// List all load balancers
+	input := &elasticloadbalancingv2.DescribeLoadBalancersInput{}
+	result, err := elbClient.DescribeLoadBalancers(ctx, input)
+	if err != nil {
+		d.AddError("Failed to list NLBs in AWS", err.Error())
+		return
+	}
+
+	// Find NLBs with our cluster tag
+	var nlbARNs []string
+	for _, lb := range result.LoadBalancers {
+		// Skip if not a network load balancer
+		if lb.Type != types.LoadBalancerTypeEnumNetwork {
+			continue
+		}
+
+		// Get tags for this load balancer
+		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
+			ResourceArns: []string{*lb.LoadBalancerArn},
+		}
+		tagsResult, err := elbClient.DescribeTags(ctx, tagsInput)
+		if err != nil {
+			tflog.Debug(ctx, "Failed to get tags for NLB", map[string]any{
+				"arn":   *lb.LoadBalancerArn,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		// Check if this NLB has our cluster tag
+		for _, tag := range tagsResult.TagDescriptions[0].Tags {
+			if *tag.Key == "elbv2.k8s.aws/cluster" && *tag.Value == "ds-zogu5a-stage-mint-0" {
+				nlbARNs = append(nlbARNs, *lb.LoadBalancerArn)
+				tflog.Debug(ctx, "Found NLB with cluster tag", map[string]any{
+					"arn":  *lb.LoadBalancerArn,
+					"name": *lb.LoadBalancerName,
+				})
+				break
 			}
 		}
 	}
 
-	// Step 5: Wait for AWS Load Balancer Controller to finish NLB deletion
-	tflog.Debug(ctx, "Waiting 5 minutes for NLBs to be deleted...")
-	timeout = time.After(5 * time.Minute)
-	ticker = time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	nlbsDeleted := false
-	for !nlbsDeleted {
-		select {
-		case <-ctx.Done():
-			d.AddError("Context cancelled while waiting for NLB deletion", ctx.Err().Error())
-			return
-		case <-timeout:
-			d.AddError("Timeout while waiting for NLB deletion", "NLBs may still exist")
-			return
-		case <-ticker.C:
-			// Check if any services with load balancer annotation still exist
-			remaining := &corev1.ServiceList{}
-			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
-				d.AddError("Failed to list services during NLB deletion wait", err.Error())
-				return
-			}
-
-			anyWithAnnotation := false
-			for _, svc := range remaining.Items {
-				if svc.Annotations != nil {
-					if _, ok := svc.Annotations[attrKey]; ok {
-						anyWithAnnotation = true
-						break
-					}
-				}
-			}
-
-			if !anyWithAnnotation {
-				tflog.Debug(ctx, "All NLBs verified as deleted")
-				nlbsDeleted = true
-			}
-		}
+	// If we found NLBs with our cluster tag, they should have been deleted
+	if len(nlbARNs) > 0 {
+		d.AddError("NLBs still exist in AWS", fmt.Sprintf("Found %d NLBs with cluster tag value ds-zogu5a-stage-mint-0 that should have been deleted", len(nlbARNs)))
+		return
 	}
 
+	tflog.Debug(ctx, "Final verification complete: No NLBs found with cluster tag", map[string]any{"cluster": "ds-zogu5a-stage-mint-0"})
 	return
 }
 
@@ -247,6 +266,21 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	d.Append(deleteIngressNLB(ctx, kubeClient, "ingress")...)
+	if d.HasError() {
+		return
+	}
+
+	// Get cluster configuration to access cluster name
+	var clusterCfg awsconfig.ClusterConfiguration
+	var clusterDiags diag.Diagnostics
+	clusterCfg, clusterDiags = dp.ClusterConfigurationData(ctx)
+	d.Append(clusterDiags...)
+	if d.HasError() {
+		return
+	}
+
+	// Verify NLB deletion in AWS
+	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, clusterCfg.InfraId.ValueString())...)
 	if d.HasError() {
 		return
 	}
@@ -338,5 +372,4 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	return
-
 }
