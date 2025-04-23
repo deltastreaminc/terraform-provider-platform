@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -97,8 +98,8 @@ func suspendKustomization(ctx context.Context, kubeClient *util.RetryableClient,
 	return d
 }
 
-func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) diag.Diagnostics {
-	d := diag.Diagnostics{}
+func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, namespace string) (d diag.Diagnostics) {
+	d = diag.Diagnostics{}
 
 	// Step 1: List all services in this namespace
 	services := &corev1.ServiceList{}
@@ -106,7 +107,7 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 		return kubeClient.List(ctx, services, client.InNamespace(namespace))
 	}); err != nil {
 		d.AddError("Failed to list services in namespace", err.Error())
-		return d
+		return
 	}
 
 	attrKey := "service.beta.kubernetes.io/aws-load-balancer-attributes"
@@ -119,8 +120,7 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 		attrVal, hasAttr := svc.Annotations[attrKey]
 		if hasAttr && strings.Contains(attrVal, "deletion_protection.enabled=true") {
-
-			// Step 2a: Disable deletion protection
+			// Step 2a: Disable deletion protection by updating the existing annotation
 			svc.Annotations[attrKey] = strings.Replace(attrVal, "deletion_protection.enabled=true", "deletion_protection.enabled=false", 1)
 
 			err := retry.Do(ctx, retrylimits, func(ctx context.Context) error {
@@ -159,19 +159,20 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	for {
+	servicesDeleted := false
+	for !servicesDeleted {
 		select {
 		case <-ctx.Done():
 			d.AddError("Context cancelled while waiting for service deletion", ctx.Err().Error())
-			return d
+			return
 		case <-timeout:
 			d.AddError("Timeout while waiting for services to be deleted", "Some services may still exist")
-			return d
+			return
 		case <-ticker.C:
 			remaining := &corev1.ServiceList{}
 			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
 				d.AddError("Failed to list services during deletion wait", err.Error())
-				return d
+				return
 			}
 
 			anyWithAnnotation := false
@@ -186,10 +187,52 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 
 			if !anyWithAnnotation {
 				tflog.Debug(ctx, "All services with deletion protection annotation successfully deleted.")
-				return d
+				servicesDeleted = true
 			}
 		}
 	}
+
+	// Step 5: Wait for AWS Load Balancer Controller to finish NLB deletion
+	tflog.Debug(ctx, "Waiting 5 minutes for NLBs to be deleted...")
+	timeout = time.After(5 * time.Minute)
+	ticker = time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	nlbsDeleted := false
+	for !nlbsDeleted {
+		select {
+		case <-ctx.Done():
+			d.AddError("Context cancelled while waiting for NLB deletion", ctx.Err().Error())
+			return
+		case <-timeout:
+			d.AddError("Timeout while waiting for NLB deletion", "NLBs may still exist")
+			return
+		case <-ticker.C:
+			// Check if any services with load balancer annotation still exist
+			remaining := &corev1.ServiceList{}
+			if err := kubeClient.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
+				d.AddError("Failed to list services during NLB deletion wait", err.Error())
+				return
+			}
+
+			anyWithAnnotation := false
+			for _, svc := range remaining.Items {
+				if svc.Annotations != nil {
+					if _, ok := svc.Annotations[attrKey]; ok {
+						anyWithAnnotation = true
+						break
+					}
+				}
+			}
+
+			if !anyWithAnnotation {
+				tflog.Debug(ctx, "All NLBs verified as deleted")
+				nlbsDeleted = true
+			}
+		}
+	}
+
+	return
 }
 
 func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d diag.Diagnostics) {
@@ -296,5 +339,4 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	return
-
 }
