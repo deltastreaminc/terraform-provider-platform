@@ -263,7 +263,7 @@ var Schema = schema.Schema{
 					Description: "The private subnet IDs hosting nodes for this cluster.",
 					ElementType: basetypes.StringType{},
 					Required:    true,
-					Validators:  []validator.List{listvalidator.SizeAtLeast(3)},
+					Validators:  []validator.List{listvalidator.SizeAtLeast(2)},
 				},
 				"public_subnet_ids": schema.ListAttribute{
 					Description: "The public subnet IDs with internet gateway.",
