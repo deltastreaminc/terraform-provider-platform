@@ -211,11 +211,6 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 
 	var nlbARNs []string
 	for _, lb := range result.LoadBalancers {
-		// Skip if not a network load balancer
-		if lb.Type != types.LoadBalancerTypeEnumNetwork {
-			continue
-		}
-
 		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
 			ResourceArns: []string{*lb.LoadBalancerArn},
 		}
@@ -240,15 +235,35 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 		}
 	}
 
-	// If we found NLBs with our cluster tag, they should have been deleted
+	// If we found NLBs with our cluster tag, try to delete them directly via AWS SDK
 	if len(nlbARNs) > 0 {
-		// Try to delete NLBs directly via AWS SDK
 		tflog.Debug(ctx, "Attempting to delete NLBs directly via AWS SDK", map[string]any{
 			"count": len(nlbARNs),
 		})
 
 		for _, arn := range nlbARNs {
-			_, err := elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			// First, disable deletion protection
+			_, err := elbClient.ModifyLoadBalancerAttributes(ctx, &elasticloadbalancingv2.ModifyLoadBalancerAttributesInput{
+				LoadBalancerArn: &arn,
+				Attributes: []types.LoadBalancerAttribute{
+					{
+						Key:   aws.String("deletion_protection.enabled"),
+						Value: aws.String("false"),
+					},
+				},
+			})
+			if err != nil {
+				tflog.Debug(ctx, "Failed to disable deletion protection for NLB", map[string]any{
+					"arn":   arn,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			// Wait for the deletion protection change to take effect
+			time.Sleep(20 * time.Second)
+
+			_, err = elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
 				LoadBalancerArn: &arn,
 			})
 			if err != nil {
