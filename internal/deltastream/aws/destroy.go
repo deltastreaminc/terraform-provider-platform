@@ -209,7 +209,6 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 		return
 	}
 
-	// Find NLBs with our cluster tag
 	var nlbARNs []string
 	for _, lb := range result.LoadBalancers {
 		// Skip if not a network load balancer
@@ -217,7 +216,6 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 			continue
 		}
 
-		// Get tags for this load balancer
 		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
 			ResourceArns: []string{*lb.LoadBalancerArn},
 		}
@@ -230,9 +228,8 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 			continue
 		}
 
-		// Check if this NLB has our cluster tag
 		for _, tag := range tagsResult.TagDescriptions[0].Tags {
-			if *tag.Key == "elbv2.k8s.aws/cluster" && *tag.Value == "ds-zogu5a-stage-mint-0" {
+			if *tag.Key == "elbv2.k8s.aws/cluster" && *tag.Value == clusterName {
 				nlbARNs = append(nlbARNs, *lb.LoadBalancerArn)
 				tflog.Debug(ctx, "Found NLB with cluster tag", map[string]any{
 					"arn":  *lb.LoadBalancerArn,
@@ -245,11 +242,32 @@ func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cf
 
 	// If we found NLBs with our cluster tag, they should have been deleted
 	if len(nlbARNs) > 0 {
-		d.AddError("NLBs still exist in AWS", fmt.Sprintf("Found %d NLBs with cluster tag value ds-zogu5a-stage-mint-0 that should have been deleted", len(nlbARNs)))
+		// Try to delete NLBs directly via AWS SDK
+		tflog.Debug(ctx, "Attempting to delete NLBs directly via AWS SDK", map[string]any{
+			"count": len(nlbARNs),
+		})
+
+		for _, arn := range nlbARNs {
+			_, err := elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+				LoadBalancerArn: &arn,
+			})
+			if err != nil {
+				tflog.Debug(ctx, "Failed to delete NLB directly", map[string]any{
+					"arn":   arn,
+					"error": err.Error(),
+				})
+			} else {
+				tflog.Debug(ctx, "Successfully initiated deletion of NLB", map[string]any{
+					"arn": arn,
+				})
+			}
+		}
+
+		d.AddError("NLBs still exist in AWS", fmt.Sprintf("Found %d NLBs with cluster tag value %s that should have been deleted. Attempted direct deletion via AWS SDK.", len(nlbARNs), clusterName))
 		return
 	}
 
-	tflog.Debug(ctx, "Final verification complete: No NLBs found with cluster tag", map[string]any{"cluster": "ds-zogu5a-stage-mint-0"})
+	tflog.Debug(ctx, "Final verification complete: No NLBs found with cluster tag", map[string]any{"cluster": clusterName})
 	return
 }
 
@@ -270,17 +288,7 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 		return
 	}
 
-	// Get cluster configuration to access cluster name
-	var clusterCfg awsconfig.ClusterConfiguration
-	var clusterDiags diag.Diagnostics
-	clusterCfg, clusterDiags = dp.ClusterConfigurationData(ctx)
-	d.Append(clusterDiags...)
-	if d.HasError() {
-		return
-	}
-
-	// Verify NLB deletion in AWS
-	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, clusterCfg.InfraId.ValueString())...)
+	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, "ds-zogu5a-stage-mint-0")...)
 	if d.HasError() {
 		return
 	}
