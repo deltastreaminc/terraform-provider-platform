@@ -46,7 +46,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
     "externalID": "{{ .KafkaRoleExternalId }}"
@@ -55,7 +55,7 @@ const deploymentConfigTmpl = `
     "hosts": "{{ .KafkaBrokerList }}",
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}"
   },
   "hostnames": {
@@ -159,7 +159,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
     "externalID": "{{ .KafkaRoleExternalId }}"
@@ -374,12 +374,23 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		diags.AddError("unable to get kube cluster name", err.Error())
 		return
 	}
+	topicReplicas := 3
+
+	clusterSubnetIds := []string{}
+	d.Append(config.PrivateSubnetIds.ElementsAs(ctx, &clusterSubnetIds, false)...)
+	if d.HasError() {
+		return
+	}
+	if len(clusterSubnetIds) < topicReplicas {
+		topicReplicas := len(clusterSubnetIds)
+	}
 
 	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
 		"AccountID":                  config.AccountId.ValueString(),
 		"Region":                     cfg.Region,
+		"TopicReplicas":              topicReplicas,
 		"KmsKeyId":                   config.KmsKeyId.ValueString(),
 		"DynamoDbTable":              config.DynamoDbTableName.ValueString(),
 		"RdsControlPlaneCreds":       pgControlPlaneCred,
