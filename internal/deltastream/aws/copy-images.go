@@ -97,7 +97,9 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		},
 	}
 
-	pool := pond.New(3, 1000)
+	// temporarily set the pool to single worker to avoid toomanyrequests ecr throttles
+	// limit queue to 10 image copy at a time
+	pool := pond.New(1, 10)
 	defer pool.StopAndWait()
 	group := pool.Group()
 
