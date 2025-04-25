@@ -377,12 +377,12 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	topicReplicas := 3
 
 	clusterSubnetIds := []string{}
-	d.Append(config.PrivateSubnetIds.ElementsAs(ctx, &clusterSubnetIds, false)...)
-	if d.HasError() {
+	diags.Append(config.PrivateSubnetIds.ElementsAs(ctx, &clusterSubnetIds, false)...)
+	if diags.HasError() {
 		return
 	}
 	if len(clusterSubnetIds) < topicReplicas {
-		topicReplicas := len(clusterSubnetIds)
+		topicReplicas = len(clusterSubnetIds)
 	}
 
 	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
