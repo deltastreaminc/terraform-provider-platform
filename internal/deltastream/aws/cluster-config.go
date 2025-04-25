@@ -91,6 +91,13 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	if !(config.CustomCredentialsRoleARN.IsNull() || config.CustomCredentialsRoleARN.IsUnknown()) {
 		customCredentialsEnabled = "enabled"
 	}
+	clusterSubnetId0 := clusterSubnetIds[0]
+	clusterSubnetId1 := clusterSubnetIds[1]
+	clusterSubnetId2 := clusterSubnetId1
+	if len(clusterSubnetIds) >= 3 {
+		clusterSubnetId2 = clusterSubnetIds[2]
+	}
+	
 
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
@@ -119,6 +126,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"vpcCidr":                          []byte(config.VpcCidr.ValueString()),
 			"vpcPrivateSubnetIDs":              []byte(strings.Join(vpcPrivateSubnets, ",")),
 			"clusterPrivateSubnetIDs":          []byte(strings.Join(clusterSubnetIds, ",")),
+			"clusterPrivateSubnetID1":          []byte(clusterSubnetId0),
+			"clusterPrivateSubnetID2":          []byte(clusterSubnetId1),
+			"clusterPrivateSubnetID3":          []byte(clusterSubnetId2),
 			"clusterPublicSubnetIDs":           []byte(strings.Join(clusterPublicSubnetIDs, ",")),
 			"discoveryRegion":                  []byte(cfg.Region),
 			"apiServerURI":                     []byte(*cluster.Endpoint),
