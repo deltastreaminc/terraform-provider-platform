@@ -61,6 +61,10 @@ const deploymentConfigTmpl = `
   "hostnames": {
     "dpAPIHostname": "{{ .ApiHostname }}"
   },
+  "grafanaGoogleOAuth": {
+    "clientID": "{{ .DSSecret.GoogleClientID }}",
+    "clientSecret": "{{ .DSSecret.GoogleClientSecret }}"
+  },
   "googleOAuth": {
     "clientID": "{{ .DSSecret.GoogleClientID }}",
     "clientSecret": "{{ .DSSecret.GoogleClientSecret }}"
