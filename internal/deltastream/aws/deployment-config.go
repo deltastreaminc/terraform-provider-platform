@@ -177,7 +177,9 @@ const deploymentConfigTmpl = `
     "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
     "trialStoreSQSRegion": "{{ .DSSecret.TrialConfig.TrialStoreSQSRegion }}",
     "trialStoreKafkaUri": "{{ .DSSecret.TrialConfig.TrialStoreKafkaUri }}",
-    "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}"
+    "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}",
+    "trialStoreClusterTopicArn": "{{ .DSSecret.TrialConfig.trialStoreClusterTopicArn }}",
+    "trialStoreClusterIamRoleArn": "{{ .DSSecret.TrialConfig.trialStoreClusterIamRoleArn }}"
   }
 }`
 
@@ -199,6 +201,8 @@ type TrialConfig struct {
 	TrialStoreSQSRegion    string `json:"trialStoreSQSRegion"`
 	TrialStoreKafkaUri     string `json:"trialStoreKafkaUri"`
 	TrialStoreHashFunction string `json:"trialStoreHashFunction"`
+	TrialStoreClusterTopicArn string `json:"trialStoreClusterTopicArn"`
+	TrialStoreClusterIamRoleArn string `json:"trialStoreClusterIamRoleArn"`
 }
 
 type Auth0 struct {
