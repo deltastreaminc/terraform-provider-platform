@@ -178,8 +178,8 @@ const deploymentConfigTmpl = `
     "trialStoreSQSRegion": "{{ .DSSecret.TrialConfig.TrialStoreSQSRegion }}",
     "trialStoreKafkaUri": "{{ .DSSecret.TrialConfig.TrialStoreKafkaUri }}",
     "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}",
-    "trialStoreClusterTopicArn": "{{ .DSSecret.TrialConfig.trialStoreClusterTopicArn }}",
-    "trialStoreClusterIamRoleArn": "{{ .DSSecret.TrialConfig.trialStoreClusterIamRoleArn }}"
+    "trialStoreClusterTopicArn": "{{ .DSSecret.TrialConfig.TrialStoreClusterTopicArn }}",
+    "trialStoreClusterIamRoleArn": "{{ .DSSecret.TrialConfig.TrialStoreClusterIamRoleArn }}"
   }
 }`
 
