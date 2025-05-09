@@ -146,6 +146,12 @@ const deploymentConfigTmpl = `
 	"domain": "{{ .DSSecret.Auth0Cli.Domain }}",
 	"clientId": "{{ .DSSecret.Auth0Cli.ClientId }}"
   },
+  "auth0TrialMgmt": {
+	"domain": "{{ .DSSecret.Auth0TrialMgmt.Domain }}",
+	"clientId": "{{ .DSSecret.Auth0TrialMgmt.ClientId }}"
+	"clientSecret": "{{ .DSSecret.Auth0TrialMgmt.clientSecret }}"
+	"connectionName": "{{ .DSSecret.Auth0TrialMgmt.ConnectionName }}"
+  },
   "sendgrid": {
 	"key": "{{ .DSSecret.SendgridApiKey }}"
   },
@@ -184,15 +190,16 @@ const deploymentConfigTmpl = `
 }`
 
 type DSSecrets struct {
-	GoogleClientID      string      `json:"googleClientID"`
-	GoogleClientSecret  string      `json:"googleClientSecret"`
-	PagerdutyServiceKey string      `json:"pagerdutyServiceKey"`
-	Auth0Api            Auth0       `json:"auth0api"`
-	Auth0Cli            Auth0       `json:"auth0cli"`
-	SendgridApiKey      string      `json:"sendgridApiKey"`
-	PostHogPublicId     string      `json:"posthogPublicID"`
-	Tailscale           Tailscale   `json:"tailscale"`
-	TrialConfig         TrialConfig `json:"trialConfig"`
+	GoogleClientID      string         `json:"googleClientID"`
+	GoogleClientSecret  string         `json:"googleClientSecret"`
+	PagerdutyServiceKey string         `json:"pagerdutyServiceKey"`
+	Auth0Api            Auth0          `json:"auth0api"`
+	Auth0Cli            Auth0          `json:"auth0cli"`
+	Auth0TrialMgmt      Auth0TrialMgmt `json:"auth0TrialMgmt"`
+	SendgridApiKey      string         `json:"sendgridApiKey"`
+	PostHogPublicId     string         `json:"posthogPublicID"`
+	Tailscale           Tailscale      `json:"tailscale"`
+	TrialConfig         TrialConfig    `json:"trialConfig"`
 }
 
 type TrialConfig struct {
@@ -209,6 +216,13 @@ type Auth0 struct {
 	Audience string `json:"audience"`
 	Domain   string `json:"domain"`
 	ClientId string `json:"clientId"`
+}
+
+type Auth0TrialMgmt struct {
+	Domain         string `json:"domain"`
+	ClientId       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	ConnectionName string `json:"connectionName"`
 }
 
 type PostgresCredSecret struct {
