@@ -147,7 +147,7 @@ const deploymentConfigTmpl = `
 	"clientId": "{{ .DSSecret.Auth0Cli.ClientId }}"
   },
   "auth0TrialMgmt": {
-	"domain": "{{ .DSSecret.auth0TrialMgmt.Domain }}",
+	"domain": "{{ .DSSecret.Auth0TrialMgmt.Domain }}",
 	"clientId": "{{ .DSSecret.Auth0TrialMgmt.ClientId }}"
 	"clientSecret": "{{ .DSSecret.Auth0TrialMgmt.clientSecret }}"
 	"connectionName": "{{ .DSSecret.Auth0TrialMgmt.ConnectionName }}"
