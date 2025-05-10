@@ -148,8 +148,8 @@ const deploymentConfigTmpl = `
   },
   "auth0TrialMgmt": {
 	"domain": "{{ .DSSecret.Auth0TrialMgmt.Domain }}",
-	"clientId": "{{ .DSSecret.Auth0TrialMgmt.ClientId }}"
-	"clientSecret": "{{ .DSSecret.Auth0TrialMgmt.ClientSecret }}"
+	"clientId": "{{ .DSSecret.Auth0TrialMgmt.ClientId }}",
+	"clientSecret": "{{ .DSSecret.Auth0TrialMgmt.ClientSecret }}",
 	"connectionName": "{{ .DSSecret.Auth0TrialMgmt.ConnectionName }}"
   },
   "sendgrid": {
