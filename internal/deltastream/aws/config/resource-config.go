@@ -48,13 +48,16 @@ type ClusterConfiguration struct {
 	DsAccountId basetypes.StringValue `tfsdk:"ds_account_id"`
 	DsRegion    basetypes.StringValue `tfsdk:"ds_region"`
 
-	AccountId       basetypes.StringValue `tfsdk:"account_id"`
-	InfraId         basetypes.StringValue `tfsdk:"infra_id"`
-	InfraType       basetypes.StringValue `tfsdk:"infra_type"`
-	EksResourceId   basetypes.StringValue `tfsdk:"eks_resource_id"`
-	ClusterIndex    basetypes.Int64Value  `tfsdk:"cluster_index"`
-	ProductVersion  basetypes.StringValue `tfsdk:"product_version"`
-	CpuArchitecture basetypes.StringValue `tfsdk:"cpu_architecture"`
+	AccountId             basetypes.StringValue `tfsdk:"account_id"`
+	InfraId               basetypes.StringValue `tfsdk:"infra_id"`
+	InfraType             basetypes.StringValue `tfsdk:"infra_type"`
+	EksResourceId         basetypes.StringValue `tfsdk:"eks_resource_id"`
+	ClusterIndex          basetypes.Int64Value  `tfsdk:"cluster_index"`
+	ProductVersion        basetypes.StringValue `tfsdk:"product_version"`
+	CpuArchitecture       basetypes.StringValue `tfsdk:"cpu_architecture"`
+	NodepoolInstanceTypes basetypes.ListValue   `tfsdk:"nodepool_instance_types"`
+	NodepoolCapacityType  basetypes.StringValue `tfsdk:"nodepool_capacity_type"`
+	NodepoolCpuLimit      basetypes.Int32Value  `tfsdk:"nodepool_cpu_limit"`
 
 	VpcId    basetypes.StringValue `tfsdk:"vpc_id"`
 	VpcCidr  basetypes.StringValue `tfsdk:"vpc_cidr"`
@@ -233,6 +236,20 @@ var Schema = schema.Schema{
 				},
 				"cpu_architecture": schema.StringAttribute{
 					Description: "The CPU Architecture for EKS.",
+					Required:    true,
+				},
+				"nodepool_instance_types": schema.ListAttribute{
+					Description: "The list of instance types for the node pool.",
+					ElementType: basetypes.StringType{},
+					Required:    true,
+				},
+				"nodepool_capacity_type": schema.StringAttribute{
+					Description: "The capacity type for the node pool, can be on_demand or spot.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.OneOf("spot", "on_demand")},
+				},
+				"nodepool_cpu_limit": schema.Int32Attribute{
+					Description: "The CPU limit for the node pool.",
 					Required:    true,
 				},
 				"vpc_id": schema.StringAttribute{
