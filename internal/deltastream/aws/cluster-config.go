@@ -87,6 +87,13 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	}
 	sort.Strings(clusterPublicSubnetIDs)
 
+	nodepoolInstanceTypes := []string{}
+	d.Append(config.NodepoolInstanceTypes.ElementsAs(ctx, &nodepoolInstanceTypes, false)...)
+	if d.HasError() {
+		return
+	}
+	sort.Strings(nodepoolInstanceTypes)
+
 	customCredentialsEnabled := "disabled"
 	if !(config.CustomCredentialsRoleARN.IsNull() || config.CustomCredentialsRoleARN.IsUnknown()) {
 		customCredentialsEnabled = "enabled"
@@ -97,11 +104,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	if len(clusterSubnetIds) >= 3 {
 		clusterSubnetId3 = clusterSubnetIds[2]
 	}
-	
 
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
+			"quote":  []byte(`\"`),
 			"meshID": []byte("deltastream"),
 			// todo remove duplicate properties
 			"stack":             []byte(config.Stack.ValueString()),
@@ -120,7 +127,10 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
 			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
-			"vpnMode":                  		[]byte(config.VpnMode.ValueString()),
+			"nodepoolCapacityType":             []byte(config.NodepoolCapacityType.ValueString()),
+			"nodepoolInstanceTypes":            []byte(`"` + strings.Join(nodepoolInstanceTypes, `","`) + `"`),
+			"nodepoolCpuLimit":                 []byte(fmt.Sprintf("%d", config.NodepoolCpuLimit.ValueInt32())),
+			"vpnMode":                          []byte(config.VpnMode.ValueString()),
 			"tailscaleNamespace":               []byte("tailscale-" + config.InfraId.ValueString()),
 			"vpcId":                            []byte(config.VpcId.ValueString()),
 			"vpcCidr":                          []byte(config.VpcCidr.ValueString()),
@@ -140,7 +150,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"externalSecretsRoleARN":           []byte(config.AwsSecretsManagerRoRoleARN.ValueString()),
 			"infraOperatorRoleARN":             []byte(config.InfraManagerRoleArn.ValueString()),
 			"vaultRoleARN":                     []byte(config.VaultRoleArn.ValueString()),
-			"mviewStoreType":					[]byte(config.MaterializedViewStoreType.ValueString()),
+			"mviewStoreType":                   []byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"vaultInitRoleARN":                 []byte(config.VaultInitRoleArn.ValueString()),
 			"lokiRoleARN":                      []byte(config.LokiRoleArn.ValueString()),
@@ -203,11 +213,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"workloadIamRoleArn":              []byte(ptr.Deref(config.WorkloadRoleArn.ValueStringPointer(), "")),
 			"workloadManagerIamRoleArn":       []byte(ptr.Deref(config.WorkloadManagerRoleArn.ValueStringPointer(), "")),
 
-			"customCredentialsRoleARN":      []byte(ptr.Deref(config.CustomCredentialsRoleARN.ValueStringPointer(), "")),
-			"enableCustomCredentialsPlugin": []byte(customCredentialsEnabled),
-			"rdsCACertsSecret":              []byte(config.RdsCACertsSecret.ValueString()),
-			"rdsControlPlaneMasterPasswordSecret":       []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
-			"installationTimestamp":         []byte(config.InstallationTimestamp.ValueString()),
+			"customCredentialsRoleARN":            []byte(ptr.Deref(config.CustomCredentialsRoleARN.ValueStringPointer(), "")),
+			"enableCustomCredentialsPlugin":       []byte(customCredentialsEnabled),
+			"rdsCACertsSecret":                    []byte(config.RdsCACertsSecret.ValueString()),
+			"rdsControlPlaneMasterPasswordSecret": []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
+			"installationTimestamp":               []byte(config.InstallationTimestamp.ValueString()),
 		}
 		return nil
 	})
