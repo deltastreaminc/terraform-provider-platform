@@ -108,7 +108,6 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
-			"quote":  []byte(`\"`),
 			"meshID": []byte("deltastream"),
 			// todo remove duplicate properties
 			"stack":             []byte(config.Stack.ValueString()),
