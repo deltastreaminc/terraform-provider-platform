@@ -244,9 +244,9 @@ var Schema = schema.Schema{
 					Required:    true,
 				},
 				"nodepool_capacity_type": schema.StringAttribute{
-					Description: "The capacity type for the node pool, can be on_demand or spot.",
+					Description: "The capacity type for the node pool, can be on-demand or spot.",
 					Required:    true,
-					Validators:  []validator.String{stringvalidator.OneOf("spot", "on_demand")},
+					Validators:  []validator.String{stringvalidator.OneOf("spot", "on-demand")},
 				},
 				"nodepool_cpu_limit": schema.Int32Attribute{
 					Description: "The CPU limit for the node pool.",
