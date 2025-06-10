@@ -1,0 +1,41 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: OCIRepository
+metadata:
+  name: schema-version-check
+  namespace: cluster-config
+spec:
+  interval: 5m
+  url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
+  provider: aws
+  ref:
+    tag: "0.0.4-schema-version-check" 
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: schema-version-check
+  namespace: cluster-config
+spec:
+  sourceRef:
+    kind: OCIRepository
+    name: schema-version-check
+    namespace: cluster-config
+  interval: 60m
+  retryInterval: 5m
+  path: ./schema-version-check/default
+  prune: true
+  wait: true
+  timeout: 2m
+  images:
+  - name: api-server
+    newName: {{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/services/api-server
+    newTag: "0.0.4-schema-version-check"
+  postBuild:
+    substituteFrom:
+    - kind: Secret
+      name: cluster-settings
+      namespace: cluster-config
+  dependsOn:
+  - name: schema-migrate
+    namespace: cluster-config
+

@@ -214,7 +214,9 @@ func ApplyManifests(ctx context.Context, kubeClient *RetryableClient, manifestYa
 	for _, manifestYaml := range manifestYamls {
 		u := &unstructured.Unstructured{}
 
+		fmt.Printf("Unmarshalling manifest: %s\n", manifestYaml)
 		if err := yaml.Unmarshal([]byte(manifestYaml), u); err != nil {
+			fmt.Printf("Error unmarshalling: %v\n", err)
 			d.AddError("Failed to unmarshal manifest", err.Error())
 			return
 		}
@@ -238,6 +240,7 @@ func ApplyManifests(ctx context.Context, kubeClient *RetryableClient, manifestYa
 
 			u.SetResourceVersion(ug.GetResourceVersion())
 			if err := kubeClient.Update(ctx, u); err != nil {
+				fmt.Printf("Error updating: %v\n", err)
 				return retry.RetryableError(err)
 			}
 			return nil
