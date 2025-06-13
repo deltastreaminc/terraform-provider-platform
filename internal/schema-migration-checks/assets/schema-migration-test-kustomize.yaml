@@ -1,4 +1,4 @@
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
   name: schema-migration-test
@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: 0.0.4-schema-version-check
+    tag: 0.0.7-schema-version-check
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -24,13 +24,19 @@ spec:
   retryInterval: 5m
   path: ./schema-test-migrate/default
   prune: true
+  timeout: 10m
   wait: true
-  timeout: 2m
   images:
   - name: api-server
     newName: {{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/services/api-server
-    newTag: 0.0.4-schema-version-check
+    newTag: {{ .ApiServerNewVersion }}
   postBuild:
     substitute:
-      test_pg_host: {{ .test_pg_host }}
-
+      test_rds_host: {{ .test_pg_host }}
+      rdsCACertsSecret: {{ .rdsCACertsSecret }}
+      region: {{ .Region }}
+      stack: stage
+      topology: ds
+      infraID: kd8j38
+      cloud: aws
+      resourceID: mint

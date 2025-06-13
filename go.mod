@@ -18,6 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.12
 	github.com/containers/image/v5 v5.30.1
+	github.com/external-secrets/external-secrets v0.9.5
 	github.com/fluxcd/helm-controller/api v1.1.0
 	github.com/fluxcd/image-automation-controller/api v0.37.1
 	github.com/fluxcd/image-reflector-controller/api v0.31.2
