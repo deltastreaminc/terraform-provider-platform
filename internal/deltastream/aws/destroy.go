@@ -303,7 +303,13 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 		return
 	}
 
-	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, "ds-zogu5a-stage-mint-0")...)
+	clusterName, err := util.GetKubeClusterName(ctx, dp)
+	if err != nil {
+		d.AddError("failed to get cluster name", err.Error())
+		return
+	}
+
+	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, clusterName)...)
 	if d.HasError() {
 		return
 	}
