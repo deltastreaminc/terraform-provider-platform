@@ -46,7 +46,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
     "externalID": "{{ .KafkaRoleExternalId }}"
@@ -55,11 +55,15 @@ const deploymentConfigTmpl = `
     "hosts": "{{ .KafkaBrokerList }}",
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}"
   },
   "hostnames": {
     "dpAPIHostname": "{{ .ApiHostname }}"
+  },
+  "grafanaGoogleOAuth": {
+    "clientID": "{{ .DSSecret.GoogleClientID }}",
+    "clientSecret": "{{ .DSSecret.GoogleClientSecret }}"
   },
   "googleOAuth": {
     "clientID": "{{ .DSSecret.GoogleClientID }}",
@@ -92,7 +96,7 @@ const deploymentConfigTmpl = `
     },
     "orbBillingBucket": {
       "name": "{{ .OrbBillingBucket }}",
-      "region": "{{ .Region }}",
+      "region": "{{ .OrbBillingBucketRegion }}",
 	  "endpoint": "s3.{{ .OrbBillingBucketRegion }}.amazonaws.com",
 	  "insecureSkipVerify": false
     },
@@ -142,6 +146,12 @@ const deploymentConfigTmpl = `
 	"domain": "{{ .DSSecret.Auth0Cli.Domain }}",
 	"clientId": "{{ .DSSecret.Auth0Cli.ClientId }}"
   },
+  "auth0TrialMgmt": {
+	"domain": "{{ .DSSecret.Auth0TrialMgmt.Domain }}",
+	"clientId": "{{ .DSSecret.Auth0TrialMgmt.ClientId }}",
+	"clientSecret": "{{ .DSSecret.Auth0TrialMgmt.ClientSecret }}",
+	"connectionName": "{{ .DSSecret.Auth0TrialMgmt.ConnectionName }}"
+  },
   "sendgrid": {
 	"key": "{{ .DSSecret.SendgridApiKey }}"
   },
@@ -159,7 +169,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
-    "topicReplicas": 3,
+    "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
     "externalID": "{{ .KafkaRoleExternalId }}"
@@ -173,20 +183,23 @@ const deploymentConfigTmpl = `
     "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
     "trialStoreSQSRegion": "{{ .DSSecret.TrialConfig.TrialStoreSQSRegion }}",
     "trialStoreKafkaUri": "{{ .DSSecret.TrialConfig.TrialStoreKafkaUri }}",
-    "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}"
+    "trialStoreHashFunction": "{{ .DSSecret.TrialConfig.TrialStoreHashFunction }}",
+    "trialStoreClusterTopicArn": "{{ .DSSecret.TrialConfig.TrialStoreClusterTopicArn }}",
+    "trialStoreClusterIamRoleArn": "{{ .DSSecret.TrialConfig.TrialStoreClusterIamRoleArn }}"
   }
 }`
 
 type DSSecrets struct {
-	GoogleClientID      string      `json:"googleClientID"`
-	GoogleClientSecret  string      `json:"googleClientSecret"`
-	PagerdutyServiceKey string      `json:"pagerdutyServiceKey"`
-	Auth0Api            Auth0       `json:"auth0api"`
-	Auth0Cli            Auth0       `json:"auth0cli"`
-	SendgridApiKey      string      `json:"sendgridApiKey"`
-	PostHogPublicId     string      `json:"posthogPublicID"`
-	Tailscale           Tailscale   `json:"tailscale"`
-	TrialConfig         TrialConfig `json:"trialConfig"`
+	GoogleClientID      string         `json:"googleClientID"`
+	GoogleClientSecret  string         `json:"googleClientSecret"`
+	PagerdutyServiceKey string         `json:"pagerdutyServiceKey"`
+	Auth0Api            Auth0          `json:"auth0api"`
+	Auth0Cli            Auth0          `json:"auth0cli"`
+	Auth0TrialMgmt      Auth0TrialMgmt `json:"auth0TrialMgmt"`
+	SendgridApiKey      string         `json:"sendgridApiKey"`
+	PostHogPublicId     string         `json:"posthogPublicID"`
+	Tailscale           Tailscale      `json:"tailscale"`
+	TrialConfig         TrialConfig    `json:"trialConfig"`
 }
 
 type TrialConfig struct {
@@ -195,12 +208,21 @@ type TrialConfig struct {
 	TrialStoreSQSRegion    string `json:"trialStoreSQSRegion"`
 	TrialStoreKafkaUri     string `json:"trialStoreKafkaUri"`
 	TrialStoreHashFunction string `json:"trialStoreHashFunction"`
+	TrialStoreClusterTopicArn string `json:"trialStoreClusterTopicArn"`
+	TrialStoreClusterIamRoleArn string `json:"trialStoreClusterIamRoleArn"`
 }
 
 type Auth0 struct {
 	Audience string `json:"audience"`
 	Domain   string `json:"domain"`
 	ClientId string `json:"clientId"`
+}
+
+type Auth0TrialMgmt struct {
+	Domain         string `json:"domain"`
+	ClientId       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	ConnectionName string `json:"connectionName"`
 }
 
 type PostgresCredSecret struct {
@@ -374,12 +396,23 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		diags.AddError("unable to get kube cluster name", err.Error())
 		return
 	}
+	topicReplicas := 3
+
+	clusterSubnetIds := []string{}
+	diags.Append(config.PrivateSubnetIds.ElementsAs(ctx, &clusterSubnetIds, false)...)
+	if diags.HasError() {
+		return
+	}
+	if len(clusterSubnetIds) < topicReplicas {
+		topicReplicas = len(clusterSubnetIds)
+	}
 
 	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
 		"AccountID":                  config.AccountId.ValueString(),
 		"Region":                     cfg.Region,
+		"TopicReplicas":              topicReplicas,
 		"KmsKeyId":                   config.KmsKeyId.ValueString(),
 		"DynamoDbTable":              config.DynamoDbTableName.ValueString(),
 		"RdsControlPlaneCreds":       pgControlPlaneCred,

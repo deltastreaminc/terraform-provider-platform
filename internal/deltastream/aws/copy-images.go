@@ -97,56 +97,59 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		},
 	}
 
-	pool := pond.New(3, 1000)
-	defer pool.StopAndWait()
-	group := pool.Group()
-
-	// dedup the image list
-	imageMap := make(map[string]bool)
-	for _, image := range imageList.Images {
-		imageMap[image] = true
-	}
-
-	for image := range imageMap {
-		sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), cfg.Region, image)
-		destImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.AccountId.ValueString(), cfg.Region, image)
-
-		destRepository := strings.Split(image, ":")[0]
-		// check if image exist in destination account, if not then create it
-		_, err := client.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
-			RepositoryNames: []string{destRepository},
-		})
-		if err != nil {
-			var notFound *ecrtypes.RepositoryNotFoundException
-			if !errors.As(err, &notFound) {
-				d.AddError(fmt.Sprintf("error copying image, unable to describe repository %s in destination registry", destRepository), err.Error())
-				return
-			} else {
-				_, err = client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
-					RepositoryName:     ptr.To(destRepository),
-					ImageTagMutability: ecrtypes.ImageTagMutabilityMutable,
-					Tags: []ecrtypes.Tag{
-						{Key: ptr.To("managed-by"),
-							Value: ptr.To("deltastream.io"),
-						}},
-				})
-				if err != nil {
-					d.AddError(fmt.Sprintf("error copying image, unable to create repository %s in destination registry", destRepository), err.Error())
+	// copy if source and destination Ecrs are different, e.g. we may have combined plane as multi-tenant plane within the same account where prod Ecr is maintained
+	if clusterConfig.DsAccountId.ValueString() != clusterConfig.AccountId.ValueString() {
+		pool := pond.New(1, 10)
+		defer pool.StopAndWait()
+		group := pool.Group()
+	
+		// dedup the image list
+		imageMap := make(map[string]bool)
+		for _, image := range imageList.Images {
+			imageMap[image] = true
+		}
+	
+		for image := range imageMap {
+			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), cfg.Region, image)
+			destImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.AccountId.ValueString(), cfg.Region, image)
+	
+			destRepository := strings.Split(image, ":")[0]
+			// check if image exist in destination account, if not then create it
+			_, err := client.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
+				RepositoryNames: []string{destRepository},
+			})
+			if err != nil {
+				var notFound *ecrtypes.RepositoryNotFoundException
+				if !errors.As(err, &notFound) {
+					d.AddError(fmt.Sprintf("error copying image, unable to describe repository %s in destination registry", destRepository), err.Error())
 					return
+				} else {
+					_, err = client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
+						RepositoryName:     ptr.To(destRepository),
+						ImageTagMutability: ecrtypes.ImageTagMutabilityMutable,
+						Tags: []ecrtypes.Tag{
+							{Key: ptr.To("managed-by"),
+								Value: ptr.To("deltastream.io"),
+							}},
+					})
+					if err != nil {
+						d.AddError(fmt.Sprintf("error copying image, unable to create repository %s in destination registry", destRepository), err.Error())
+						return
+					}
 				}
 			}
+	
+			group.Submit(func() {
+				err = copyImage(ctx, imageCredContext, sourceImage, destImage)
+				if err != nil {
+					d.AddError("error copying image", err.Error())
+					return
+				}
+			})
 		}
-
-		group.Submit(func() {
-			err = copyImage(ctx, imageCredContext, sourceImage, destImage)
-			if err != nil {
-				d.AddError("error copying image", err.Error())
-				return
-			}
-		})
+	
+		group.Wait()
 	}
-
-	group.Wait()
 
 	execEngineUri := fmt.Sprintf("deltastreamv2-release-images/exec-engine/%s/release/io/deltastream/execution-engine/%s/execution-engine-%s.jar", clusterConfig.ProductVersion.ValueString(), imageList.ExecEngineVersion, imageList.ExecEngineVersion)
 	destExecEngineUri := fmt.Sprintf("release/io/deltastream/execution-engine/%s/execution-engine-%s.jar", imageList.ExecEngineVersion, imageList.ExecEngineVersion)
