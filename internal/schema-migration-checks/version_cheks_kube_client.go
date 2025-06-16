@@ -8,48 +8,10 @@ import (
 	"time"
 
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// getKubeClient returns a controller-runtime client and a client-go clientset
-func getKubeClient() (client.Client, *kubernetes.Clientset, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	configOverrides := &clientcmd.ConfigOverrides{}
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	config, err := kubeConfig.ClientConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get kube config: %v", err)
-	}
-
-	scheme := runtime.NewScheme()
-	if err = clientgoscheme.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add client-go scheme: %v", err)
-	}
-	if err = kustomizev1.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add kustomize scheme: %v", err)
-	}
-	if err = sourcev1.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add source scheme: %v", err)
-	}
-
-	kubeClient, err := client.New(config, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create kube client: %v", err)
-	}
-
-	k8sClientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create k8s clientset: %v", err)
-	}
-
-	return kubeClient, k8sClientset, nil
-}
 
 func waitForKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) error {
 	kustomization := &kustomizev1.Kustomization{}
@@ -143,9 +105,14 @@ ProcessLogs:
 		return fmt.Errorf("failed to parse JSON response: %v", err)
 	}
 
+	// Compare versions
 	if status.CurrentVersion == status.NewVersion {
-		fmt.Printf("Schema is up to date (version %s)\n", status.CurrentVersion)
+		fmt.Printf("Versions are the same (%s), no migration needed\n", status.CurrentVersion)
 		return nil
 	}
-	return fmt.Errorf("schema migration required: current version %s, new version %s", status.CurrentVersion, status.NewVersion)
+	if status.NewVersion < status.CurrentVersion {
+		return fmt.Errorf("downgrade not allowed: %s -> %s", status.CurrentVersion, status.NewVersion)
+	}
+	fmt.Printf("Upgrading from version %s to %s\n", status.CurrentVersion, status.NewVersion)
+	return nil
 }

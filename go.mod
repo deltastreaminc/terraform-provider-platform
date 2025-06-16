@@ -18,7 +18,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.12
 	github.com/containers/image/v5 v5.30.1
-	github.com/external-secrets/external-secrets v0.9.5
 	github.com/fluxcd/helm-controller/api v1.1.0
 	github.com/fluxcd/image-automation-controller/api v0.37.1
 	github.com/fluxcd/image-reflector-controller/api v0.31.2
@@ -264,7 +263,7 @@ require (
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apiserver v0.32.1 // indirect
 	k8s.io/cli-runtime v0.32.1 // indirect
 	k8s.io/component-base v0.32.1 // indirect

@@ -8,6 +8,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
@@ -22,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// getRDSMigrationKubeClient creates and returns a controller-runtime client and a client-go clientset
-func getRDSMigrationKubeClient() (client.Client, *kubernetes.Clientset, error) {
+// getKubeClient creates and returns a controller-runtime client and a client-go clientset
+func getKubeClient() (client.Client, *kubernetes.Clientset, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
@@ -54,48 +56,6 @@ func getRDSMigrationKubeClient() (client.Client, *kubernetes.Clientset, error) {
 	}
 
 	return kubeClient, k8sClientset, nil
-}
-
-// waitForOCIRepository waits for an OCIRepository to be ready
-func waitForOCIRepository(ctx context.Context, kubeClient client.Client, namespace, name string) error {
-	ociRepo := &sourcev1.OCIRepository{}
-	ociRepoKey := client.ObjectKey{Name: name, Namespace: namespace}
-
-	// First check if OCIRepository exists
-	if err := kubeClient.Get(ctx, ociRepoKey, ociRepo); err != nil {
-		return fmt.Errorf("ocirepository not found: %v", err)
-	}
-
-	// Now wait for it to be ready
-	maxAttempts := 30 // 5 minutes total
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if err := kubeClient.Get(ctx, ociRepoKey, ociRepo); err != nil {
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		// Check if OCIRepository is ready
-		isReady := false
-		for _, condition := range ociRepo.Status.Conditions {
-			if condition.Type == "Ready" && condition.Status == "True" {
-				isReady = true
-				break
-			}
-		}
-
-		if isReady && ociRepo.Status.Artifact != nil && ociRepo.Status.Artifact.Digest != "" {
-			fmt.Println("OCIRepository is ready")
-			return nil
-		}
-
-		if attempt == maxAttempts-1 {
-			return fmt.Errorf("OCIRepository not ready after %d attempts", maxAttempts)
-		}
-
-		time.Sleep(10 * time.Second)
-	}
-
-	return fmt.Errorf("timed out waiting for OCIRepository after %d attempts", maxAttempts)
 }
 
 // waitForRDSMigrationKustomizationAndCheckLogs waits for a kustomization to complete and checks its logs
@@ -257,33 +217,6 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 	return d
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// waitForKustomization waits for a kustomization to be ready
-func waitForKustomization(ctx context.Context, kubeClient client.Client, namespace, name string) error {
-	kustomization := &kustomizev1.Kustomization{}
-	kustomizationKey := client.ObjectKey{Name: name, Namespace: namespace}
-
-	for {
-		if err := kubeClient.Get(ctx, kustomizationKey, kustomization); err != nil {
-			return fmt.Errorf("failed to get kustomization: %v", err)
-		}
-
-		if kustomization.Status.LastAppliedRevision != "" {
-			fmt.Printf("Kustomization %s is ready\n", name)
-			return nil
-		}
-
-		fmt.Printf("Waiting for kustomization %s to be ready...\n", name)
-		time.Sleep(5 * time.Second)
-	}
-}
-
 // RunSchemaMigration runs the schema migration test
 func RunSchemaMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVars map[string]string) error {
 	// Create retryable client
@@ -404,5 +337,57 @@ func RunSchemaMigration(ctx context.Context, kubeClient client.Client, k8sClient
 	}
 
 	fmt.Println("Schema migration completed successfully!")
+	return nil
+}
+
+// CleanupResources deletes all resources created for schema migration test
+func CleanupResources(ctx context.Context, kubeClient client.Client, rdsClient *rds.Client, apiServerVersion string) error {
+	fmt.Println("Starting cleanup of schema migration test resources...")
+
+	// First delete Kubernetes resources
+	fmt.Println("Deleting Kubernetes resources...")
+
+	// Delete namespace
+	fmt.Println("Deleting namespace...")
+	var namespace *corev1.Namespace
+	var namespaceKey client.ObjectKey
+	namespace = &corev1.Namespace{}
+	namespaceKey = client.ObjectKey{Name: "schema-test-migrate"}
+	if err := kubeClient.Get(ctx, namespaceKey, namespace); err == nil {
+		if err := kubeClient.Delete(ctx, namespace); err != nil {
+			fmt.Printf("Warning: failed to delete namespace: %v\n", err)
+		}
+	}
+
+	// Wait 3 minutes to ensure Kubernetes resources are completely deleted
+	fmt.Println("Waiting 3 minutes to ensure Kubernetes resources are completely deleted...")
+	time.Sleep(3 * time.Minute)
+
+	// Then delete AWS resources
+	fmt.Println("Deleting AWS resources...")
+
+	// Delete RDS instance
+	testInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+	fmt.Printf("Deleting RDS instance %s...\n", testInstanceID)
+	_, err := rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
+		DBInstanceIdentifier:   aws.String(testInstanceID),
+		SkipFinalSnapshot:      aws.Bool(true),
+		DeleteAutomatedBackups: aws.Bool(true),
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to delete RDS instance: %v\n", err)
+	}
+
+	// Delete snapshot
+	snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+	fmt.Printf("Deleting snapshot %s...\n", snapshotID)
+	_, err = rdsClient.DeleteDBSnapshot(ctx, &rds.DeleteDBSnapshotInput{
+		DBSnapshotIdentifier: aws.String(snapshotID),
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to delete snapshot: %v\n", err)
+	}
+
+	fmt.Println("Cleanup completed")
 	return nil
 }

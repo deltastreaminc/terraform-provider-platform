@@ -102,17 +102,17 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		pool := pond.New(1, 10)
 		defer pool.StopAndWait()
 		group := pool.Group()
-	
+
 		// dedup the image list
 		imageMap := make(map[string]bool)
 		for _, image := range imageList.Images {
 			imageMap[image] = true
 		}
-	
+
 		for image := range imageMap {
 			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), cfg.Region, image)
 			destImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.AccountId.ValueString(), cfg.Region, image)
-	
+
 			destRepository := strings.Split(image, ":")[0]
 			// check if image exist in destination account, if not then create it
 			_, err := client.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
@@ -138,7 +138,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 					}
 				}
 			}
-	
+
 			group.Submit(func() {
 				err = copyImage(ctx, imageCredContext, sourceImage, destImage)
 				if err != nil {
@@ -147,7 +147,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 				}
 			})
 		}
-	
+
 		group.Wait()
 	}
 

@@ -65,8 +65,7 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, instanceID st
 	}
 	existingSnapshots, err := rdsClient.DescribeDBSnapshots(ctx, describeInput)
 	if err == nil && len(existingSnapshots.DBSnapshots) > 0 {
-		fmt.Printf("Snapshot %s already exists, using it\n", snapshotID)
-		return snapshotID, nil
+		return "", fmt.Errorf("snapshot %s already exists, please delete it first", snapshotID)
 	}
 
 	// Create new snapshot
@@ -100,32 +99,13 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	testInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
 	fmt.Printf("Checking for existing instance %s...\n", testInstanceID)
 
-	// Restore instance from snapshot if it does not exist
+	// Check if instance already exists
 	describeInput := &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(testInstanceID),
 	}
 	existingInstances, err := rdsClient.DescribeDBInstances(ctx, describeInput)
 	if err == nil && len(existingInstances.DBInstances) > 0 {
-		fmt.Printf("Instance %s already exists, using it\n", testInstanceID)
-		instance := existingInstances.DBInstances[0]
-		if instance.MasterUserSecret != nil {
-			secretArn := *instance.MasterUserSecret.SecretArn
-			parts := strings.Split(secretArn, ":")
-			secretName := parts[len(parts)-1]
-			// Обрезаем суффикс после последнего дефиса, если он есть
-			if idx := strings.LastIndex(secretName, "-"); idx != -1 {
-				candidate := secretName[:idx]
-				// Проверяем, что это действительно managed secret (начинается с rds!db- и длина UUID совпадает)
-				if strings.HasPrefix(candidate, "rds!db-") && len(candidate) == len("rds!db-5515bf10-10d9-45fe-88bf-fd927101fbff") {
-					secretName = candidate
-				}
-			}
-			deploymentConfig["test_rds_master_externalsecret"] = secretName
-			fmt.Printf("DEBUG: Existing instance managed secret: %s\n", secretName)
-		} else {
-			fmt.Printf("WARNING: Existing instance has no managed secret!\n")
-		}
-		return testInstanceID, nil
+		return "", fmt.Errorf("instance %s already exists, please delete it first", testInstanceID)
 	}
 
 	// Create tags that explicitly mark this as a test instance
@@ -302,7 +282,6 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	templateVars["substitute"] = fmt.Sprintf("test_pg_host=%s", endpoint)
 	if secretName, ok := deploymentConfig["test_rds_master_externalsecret"].(string); ok {
 		templateVars["test_rds_master_externalsecret"] = secretName
-		fmt.Printf("DEBUG: test_rds_master_externalsecret in templateVars: %s\n", secretName)
 	} else {
 		fmt.Printf("ERROR: test_rds_master_externalsecret not found in deploymentConfig!\n")
 	}
@@ -338,6 +317,12 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	fmt.Println("Waiting for kustomization and checking logs...")
 	if err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate"); err != nil {
 		fmt.Printf("Warning: error waiting for kustomization: %v\n", err)
+	}
+
+	// Only start cleanup after getting logs
+	fmt.Println("Starting cleanup after getting logs...")
+	if err := CleanupResources(ctx, kubeClient, rdsClient, templateVars["ApiServerNewVersion"]); err != nil {
+		fmt.Printf("Warning: failed to cleanup resources: %v\n", err)
 	}
 
 	fmt.Println("RDS preparation completed")
