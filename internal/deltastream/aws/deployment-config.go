@@ -203,12 +203,12 @@ type DSSecrets struct {
 }
 
 type TrialConfig struct {
-	TrialStoreRegion       string `json:"trialStoreRegion"`
-	TrialStoreSQSUrl       string `json:"trialStoreSQSUrl"`
-	TrialStoreSQSRegion    string `json:"trialStoreSQSRegion"`
-	TrialStoreKafkaUri     string `json:"trialStoreKafkaUri"`
-	TrialStoreHashFunction string `json:"trialStoreHashFunction"`
-	TrialStoreClusterTopicArn string `json:"trialStoreClusterTopicArn"`
+	TrialStoreRegion            string `json:"trialStoreRegion"`
+	TrialStoreSQSUrl            string `json:"trialStoreSQSUrl"`
+	TrialStoreSQSRegion         string `json:"trialStoreSQSRegion"`
+	TrialStoreKafkaUri          string `json:"trialStoreKafkaUri"`
+	TrialStoreHashFunction      string `json:"trialStoreHashFunction"`
+	TrialStoreClusterTopicArn   string `json:"trialStoreClusterTopicArn"`
 	TrialStoreClusterIamRoleArn string `json:"trialStoreClusterIamRoleArn"`
 }
 

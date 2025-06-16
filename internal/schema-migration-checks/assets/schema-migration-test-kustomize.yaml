@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: 0.0.7-schema-version-check
+    tag: 0.0.19-schema-version-check
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -34,9 +34,13 @@ spec:
     substitute:
       test_rds_host: {{ .test_pg_host }}
       rdsCACertsSecret: {{ .rdsCACertsSecret }}
+      test_rds_master_externalsecret: {{ .test_rds_master_externalsecret }}
+      stack: {{ .stack }}
+      infraID: {{ .infraID }}
       region: {{ .Region }}
-      stack: stage
+      resourceID: {{ .resourceID }}
+      test_db_name: {{ .test_db_name }}
       topology: ds
-      infraID: kd8j38
       cloud: aws
-      resourceID: mint
+
+
