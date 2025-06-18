@@ -105,6 +105,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 		clusterSubnetId3 = clusterSubnetIds[2]
 	}
 
+	enableKoalaTracking := "false"
+	if config.InfraType.ValueString() == "trial_multi_tenant" {
+		enableKoalaTracking = "true"
+	}
+
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
@@ -123,6 +128,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"infraID":                          []byte(config.InfraId.ValueString()),
 			"infraName":                        []byte("ds-" + config.InfraId.ValueString()),
 			"infraType":                        []byte(config.InfraType.ValueString()),
+			"enableKoalaTracking":              []byte(enableKoalaTracking),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
 			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
