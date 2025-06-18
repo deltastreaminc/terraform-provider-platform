@@ -57,6 +57,17 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 		return
 	}
 
+	if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
+		// TODO: Run schema migration test
+		// // Run schema migration test
+		// fmt.Println("Running schema migration test...")
+		// err = RunMigrationTest(ctx, kubeClient, k8sClientset, templateVars, deploymentConfig)
+		// if err != nil {
+		// 	fmt.Printf("Error: %v\n", err)
+		// return
+		// }
+	}
+
 	d.Append(util.RenderAndApplyTemplate(ctx, kubeClient, "platform", platformTemplate, map[string]string{
 		"Region":         cfg.Region,
 		"AccountID":      clusterConfig.AccountId.ValueString(),

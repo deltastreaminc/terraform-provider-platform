@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
@@ -12,10 +14,13 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// This Module is used to check schema version using kustomize
 
 //go:embed assets/schema-version-check-kustomize.yaml
 var schemaVersionCheckKustomize string
@@ -25,7 +30,7 @@ type SchemaStatus struct {
 	NewVersion     string `json:"newVersion"`
 }
 
-func CheckSchemaVersion(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVars map[string]string) error {
+func IsSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVars map[string]string) (bool, error) {
 	fmt.Println("Starting schema version check...")
 
 	// Create retryable client
@@ -33,30 +38,33 @@ func CheckSchemaVersion(ctx context.Context, kubeClient client.Client, k8sClient
 
 	// Render and apply template
 	fmt.Println("Rendering and applying template...")
-	diags := RenderAndApplyTemplate(ctx, retryableClient, "schema-version-check", []byte(schemaVersionCheckKustomize), templateVars)
+	diags := renderAndApplyTemplate(ctx, retryableClient, "schema-version-check", []byte(schemaVersionCheckKustomize), templateVars)
 	if diags.HasError() {
-		return fmt.Errorf("error rendering and applying template: %v", diags)
+		return false, fmt.Errorf("error rendering and applying template: %v", diags)
 	}
 	fmt.Println("Template applied successfully")
 
 	// Wait for kustomization and check logs
-	fmt.Println("Waiting for kustomization and checking logs...")
-	if err := waitForKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset); err != nil {
-		return fmt.Errorf("error waiting for kustomization: %v", err)
+	fmt.Println("Waiting for Schema Version Check Kustomization and checking logs...")
+	schemaMigrationRequired, err := checkSchemaVersionNewer(ctx, kubeClient, k8sClientset)
+	if err != nil {
+		return false, fmt.Errorf("error checking schema version: %v", err)
 	}
+
+	// Use Defer pattern to cleanup resources
+	defer func() {
+		if err := cleanup(ctx, kubeClient); err != nil {
+			fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
+		}
+	}()
 	fmt.Println("Schema version check completed successfully")
-
-	// Cleanup immediately after getting version
-	fmt.Println("Cleaning up resources...")
-	if err := cleanup(ctx, kubeClient); err != nil {
-		return fmt.Errorf("error during cleanup: %v", err)
+	if !schemaMigrationRequired {
+		return false, nil
 	}
-	fmt.Println("Cleanup completed successfully")
-
-	return nil
+	return true, nil
 }
 
-func RenderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClient, name string, templateData []byte, data map[string]string) (d diag.Diagnostics) {
+func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClient, name string, templateData []byte, data map[string]string) (d diag.Diagnostics) {
 	// First, parse the YAML template
 	t, err := template.New(name).Parse(string(templateData))
 	if err != nil {
@@ -91,6 +99,118 @@ func RenderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 	return diags
 }
 
+// This function is used to check if the schema version is newer than the new version and return false(if no migration needed) or true(if migration needed)
+func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (bool, error) {
+
+	// Start looking for pods immediately without waiting for kustomization
+	fmt.Println("Looking for schema-version-check pods...")
+	pods := &corev1.PodList{}
+	for {
+		if err := kubeClient.List(ctx, pods, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err != nil {
+			return false, fmt.Errorf("failed to get job pods: %v", err)
+		}
+		if len(pods.Items) > 0 {
+			break
+		}
+		fmt.Println("No pods found yet, waiting...")
+		time.Sleep(5 * time.Second)
+	}
+
+	pod := pods.Items[0]
+	fmt.Printf("Found pod: %s\n", pod.Name)
+	fmt.Println("Waiting for schema-version-check container to complete...")
+
+	var logs []byte
+	var err error
+	for {
+		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
+			return false, fmt.Errorf("failed to get pod status: %v", err)
+		}
+
+		versionCheckCompleted := false
+
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			if containerStatus.Name == "schema-version-check" {
+				if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
+					fmt.Println("Container completed successfully")
+					time.Sleep(2 * time.Second)
+					logs, err = k8sClientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+						Container: containerStatus.Name,
+					}).Do(ctx).Raw()
+					if err != nil {
+						return false, fmt.Errorf("failed to get job logs: %v", err)
+					}
+					versionCheckCompleted = true
+					break
+				}
+				if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode != 0 {
+					return false, fmt.Errorf("container failed with exit code %d", containerStatus.State.Terminated.ExitCode)
+				}
+			}
+		}
+		if versionCheckCompleted {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	fmt.Printf("Job logs:\n%s\n", string(logs))
+
+	// Find the JSON object with versions
+	logLines := strings.Split(string(logs), "\n")
+	var (
+		jsonLines   []string
+		insideBlock bool
+	)
+	for _, line := range logLines {
+		line = strings.TrimSpace(line)
+		if line == "{" {
+			insideBlock = true
+			jsonLines = []string{line}
+			continue
+		}
+		if insideBlock {
+			jsonLines = append(jsonLines, line)
+			if line == "}" {
+				break
+			}
+		}
+	}
+	if len(jsonLines) == 0 {
+		return false, fmt.Errorf("no version JSON found in logs")
+	}
+	versionJSON := strings.Join(jsonLines, "\n")
+	fmt.Printf("Found version JSON:\n%s\n", versionJSON)
+
+	var status SchemaStatus
+	if err := json.Unmarshal([]byte(versionJSON), &status); err != nil {
+		return false, fmt.Errorf("failed to parse JSON response: %v", err)
+	}
+
+	// // HARDCODE for testing
+	// status.CurrentVersion = "22"
+	// status.NewVersion = "23"
+
+	fmt.Printf("Parsed versions: currentVersion=%q, newVersion=%q\n", status.CurrentVersion, status.NewVersion)
+
+	// Compare versions
+	if status.CurrentVersion == status.NewVersion {
+		fmt.Printf("Versions are the same (%s), no need to run schema migration\n", status.CurrentVersion)
+		// Cleanup kustomization
+		fmt.Println("Cleaning up version check resources...")
+		if err := cleanup(ctx, kubeClient); err != nil {
+			fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
+		}
+		return false, nil
+	}
+	if status.CurrentVersion > status.NewVersion {
+		return false, fmt.Errorf("current schema version (%s) is newer than expected (%s): aborting migration", status.CurrentVersion, status.NewVersion)
+	}
+	fmt.Printf("Current version: %s, New version: %s\n", status.CurrentVersion, status.NewVersion)
+	fmt.Printf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
+	return true, nil
+}
+
 func cleanup(ctx context.Context, kubeClient client.Client) error {
 	// Delete Kustomization
 	kustomization := &kustomizev1.Kustomization{
@@ -106,11 +226,11 @@ func cleanup(ctx context.Context, kubeClient client.Client) error {
 	}
 
 	// Wait for Kustomization to be fully deleted
-	fmt.Println("Waiting for Kustomization to be deleted...")
+	fmt.Println("Waiting for Schema Version Check Kustomization to be deleted...")
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while waiting for Kustomization deletion")
+			return fmt.Errorf("context cancelled while waiting for Schema Version Check Kustomization deletion")
 		default:
 			err := kubeClient.Get(ctx, client.ObjectKey{
 				Name:      "schema-version-check",

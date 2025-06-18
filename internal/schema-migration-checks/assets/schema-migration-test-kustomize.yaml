@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: 0.0.20-schema-version-check
+    tag: 0.0.28-schema-version-check
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -27,7 +27,7 @@ spec:
   timeout: 10m
   wait: true
   images:
-  - name: api-server
+  - name: deltastreaminc/v2/services/api-server
     newName: {{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/services/api-server
     newTag: {{ .ApiServerNewVersion }}
   postBuild:
@@ -42,5 +42,6 @@ spec:
       test_db_name: {{ .test_db_name }}
       topology: {{ .topology }}
       cloud: {{ .cloud }}
-
-
+      dsEcrAccountID: "{{ .DsEcrAccountID }}"
+      apiServerNewVersion: "0.3.3642-363b4568c"
+      test_rds_schema_user: "{{ .test_rds_schema_user }}"

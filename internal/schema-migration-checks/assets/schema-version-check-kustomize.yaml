@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: "0.0.20-schema-version-check"
+    tag: "0.0.28-schema-version-check"
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -35,8 +35,5 @@ spec:
     - kind: Secret
       name: cluster-settings
       namespace: cluster-config
-  dependsOn:
-  - name: schema-migrate
-    namespace: cluster-config
 
 
