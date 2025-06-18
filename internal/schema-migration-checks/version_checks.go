@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -207,37 +208,49 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 }
 
 func cleanupVersionCheckKustomization(ctx context.Context, kubeClient client.Client) error {
-	// Delete Kustomization
-	kustomization := &kustomizev1.Kustomization{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "schema-version-check",
-			Namespace: "cluster-config",
-		},
-	}
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	// First delete the Kustomization
-	if err := kubeClient.Delete(ctx, kustomization); err != nil {
-		return fmt.Errorf("failed to delete kustomization: %v", err)
-	}
-
-	// Wait for Kustomization to be fully deleted
-	fmt.Println("Waiting for Schema Version Check Kustomization to be deleted...")
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while waiting for Schema Version Check Kustomization deletion")
-		default:
-			err := kubeClient.Get(ctx, client.ObjectKey{
+	// Delete Kustomization in goroutine
+	go func() {
+		defer wg.Done()
+		kustomization := &kustomizev1.Kustomization{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      "schema-version-check",
 				Namespace: "cluster-config",
-			}, kustomization)
-			if err != nil {
-				// Resource not found means it's deleted
-				fmt.Println("Kustomization successfully deleted")
-				return nil
-			}
-			time.Sleep(5 * time.Second)
-			continue
+			},
 		}
-	}
+
+		// First delete the Kustomization
+		if err := kubeClient.Delete(ctx, kustomization); err != nil {
+			fmt.Printf("Failed to delete kustomization: %v\n", err)
+			return
+		}
+
+		// Wait for Kustomization to be fully deleted
+		fmt.Println("Waiting for Schema Version Check Kustomization to be deleted...")
+		for {
+			select {
+			case <-ctx.Done():
+				fmt.Printf("Context cancelled while waiting for Schema Version Check Kustomization deletion\n")
+				return
+			default:
+				err := kubeClient.Get(ctx, client.ObjectKey{
+					Name:      "schema-version-check",
+					Namespace: "cluster-config",
+				}, kustomization)
+				if err != nil {
+					// Resource not found means it's deleted
+					fmt.Println("Kustomization successfully deleted")
+					return
+				}
+				time.Sleep(5 * time.Second)
+				continue
+			}
+		}
+	}()
+
+	wg.Wait()
+	fmt.Println("Cleanup of version check kustomization completed")
+	return nil
 }

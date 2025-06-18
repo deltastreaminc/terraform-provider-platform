@@ -91,40 +91,13 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 		return false, fmt.Errorf("failed to get job details: %v", err)
 	}
 
+	fmt.Printf("Job status: %+v\n", job.Status)
+
 	// Check if job is complete
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobComplete && condition.Status == "True" {
-			fmt.Println("Job is complete, waiting for container to finish...")
-			// Wait for container to finish
-			maxWaitAttempts := 60 // 10 minutes total
-			for attempt := 0; attempt < maxWaitAttempts; attempt++ {
-				if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
-					time.Sleep(10 * time.Second)
-					continue
-				}
-
-				for _, containerStatus := range pod.Status.ContainerStatuses {
-					if containerStatus.State.Terminated != nil {
-						fmt.Println("Container completed successfully")
-						// Wait for job to be fully complete
-						for i := 0; i < 30; i++ { // Wait up to 5 minutes
-							job, err := k8sClientset.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
-							if err != nil {
-								time.Sleep(10 * time.Second)
-								continue
-							}
-							if job.Status.Succeeded > 0 {
-								fmt.Println("Job fully completed")
-								return true, nil
-							}
-							time.Sleep(10 * time.Second)
-						}
-						return false, fmt.Errorf("timed out waiting for job to be fully complete")
-					}
-				}
-				time.Sleep(10 * time.Second)
-			}
-			return false, fmt.Errorf("timed out waiting for container to complete after %d attempts", maxWaitAttempts)
+			fmt.Println("Job is complete!")
+			return true, nil
 		} else if condition.Type == batchv1.JobFailed && condition.Status == "True" {
 			fmt.Println("Job has failed!")
 			return false, fmt.Errorf("job has failed")

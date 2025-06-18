@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,15 +47,6 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 	}
 
 	// Check and cleanup Schema migration test kustomization and namespace
-	namespace := "schema-test-migrate"
-	if err := kubeClient.Get(ctx, client.ObjectKey{
-		Name: namespace,
-	}, &corev1.Namespace{}); err == nil {
-		fmt.Println("Found existing namespace schema-test-migrate")
-	} else {
-		fmt.Println("No existing namespace schema-test-migrate")
-	}
-
 	migrationTestKustomization := &kustomizev1.Kustomization{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "schema-migration-test",
@@ -85,8 +75,9 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 		fmt.Printf("Error getting cluster-settings secret: %v\n", err)
 		return fmt.Errorf("failed to get cluster-settings secret: %v", err)
 	}
+
 	// TODO: Capture api-server new version using product.yaml.
-	// Get API server version from environment variable
+
 	apiServerVersion := os.Getenv("API_SERVER_VERSION")
 	if apiServerVersion == "" {
 		fmt.Println("API_SERVER_VERSION environment variable must be set")
@@ -221,21 +212,23 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 	if jobCompleted {
 		fmt.Println("Job completed successfully, starting cleanup...")
 
-		// Run cleanup directly
-		if err := cleanupSchemaMigrationTestKustomizationAndNamespace(context.Background(), kubeClient); err != nil {
-			fmt.Printf("Failed to cleanup kustomization and namespace: %v\n", err)
-		}
+		// Start cleanup goroutines
+		go func() {
+			if err := cleanupSchemaMigrationTestKustomizationAndNamespace(context.Background(), kubeClient); err != nil {
+				fmt.Printf("Failed to cleanup kustomization and namespace: %v\n", err)
+			}
+		}()
 
 		// Get region and instance ID from template vars
 		region := templateVarsForSchemaMigrationTest["Region"]
 		restoredInstanceID := templateVarsForSchemaMigrationTest["test_rds_instance_id"]
+		snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(templateVarsForSchemaMigrationTest["ApiServerNewVersion"], ".", "-"), "-", ""))
 
-		// Run RDS cleanup directly since it has its own WaitGroup
-		if err := cleanupRDSAndSnapshot(context.Background(), region, restoredInstanceID, snapshotID); err != nil {
-			fmt.Printf("Failed to cleanup RDS and snapshot: %v\n", err)
-		}
-
-		fmt.Println("Cleanup completed successfully")
+		go func() {
+			if err := cleanupRDSAndSnapshot(context.Background(), region, restoredInstanceID, snapshotID); err != nil {
+				fmt.Printf("Failed to cleanup RDS and snapshot: %v\n", err)
+			}
+		}()
 	}
 
 	return nil
