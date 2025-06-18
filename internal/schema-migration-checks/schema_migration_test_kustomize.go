@@ -12,7 +12,7 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,7 +92,6 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 	// Check if job is complete
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobComplete && condition.Status == "True" {
-			fmt.Println("Job completed successfully")
 			return true, nil
 		} else if condition.Type == batchv1.JobFailed && condition.Status == "True" {
 			return false, fmt.Errorf("job has failed")
@@ -134,7 +133,6 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 
 			// If job succeeded
 			if job.Status.Succeeded > 0 {
-				fmt.Println("Job completed successfully")
 				return true, nil
 			}
 
@@ -184,7 +182,7 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 	manifests := strings.Split(result, "---")
 
 	// Apply each manifest separately
-	for i, manifest := range manifests {
+	for _, manifest := range manifests {
 		manifest = strings.TrimSpace(manifest)
 		if manifest == "" {
 			continue
@@ -208,7 +206,7 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 		applyCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
-		fmt.Printf("Applying manifest %d for %s %s in namespace %s\n", i, kind, objName, namespace)
+		fmt.Printf("Applying manifest for %s %s in namespace %s\n", kind, objName, namespace)
 		diags := util.ApplyManifests(applyCtx, kubeClient, manifest)
 		if diags.HasError() {
 			for _, diag := range diags {
@@ -216,7 +214,7 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 			}
 			d = append(d, diags...)
 		} else {
-			fmt.Printf("Successfully applied manifest %d for %s %s\n", i, kind, objName)
+			fmt.Printf("Successfully applied manifest %s %s\n", kind, objName)
 		}
 	}
 
@@ -237,7 +235,6 @@ func cleanupSchemaMigrationTestKustomizationAndNamespace(ctx context.Context, ku
 		for {
 			err := kubeClient.Get(ctx, nsKey, ns)
 			if err != nil {
-				fmt.Println("Namespace schema-test-migrate successfully deleted")
 				break
 			}
 			time.Sleep(5 * time.Second)
@@ -262,7 +259,5 @@ func cleanupSchemaMigrationTestKustomizationAndNamespace(ctx context.Context, ku
 			time.Sleep(5 * time.Second)
 		}
 	}
-
-	fmt.Println("Cleanup of kustomization and namespace completed")
 	return nil
 }

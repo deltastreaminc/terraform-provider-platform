@@ -299,7 +299,7 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 	fmt.Println("All manifests applied successfully")
 
 	// Wait for kustomization and check logs
-	fmt.Println("Waiting for kustomization and checking logs...")
+	fmt.Println("Waiting for kustomization and checking job status...")
 	_, err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
 	if err != nil {
 		fmt.Printf("Warning: error waiting for kustomization: %v\n", err)
@@ -310,13 +310,17 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 }
 
 // cleanupRDSAndSnapshot deletes the RDS instance and snapshot
-func cleanupRDSAndSnapshot(ctx context.Context, region, restoredRDSInstanceID, snapshotID string) error {
+func cleanupRDSAndSnapshot(ctx context.Context, region, apiServerVersion string) error {
 	// Get RDS client
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return fmt.Errorf("unable to load SDK config: %v", err)
 	}
 	rdsClient := rds.NewFromConfig(cfg)
+
+	// Generate IDs based on API server version
+	restoredRDSInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+	snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
 
 	// Delete RDS instance
 	if restoredRDSInstanceID != "" {
@@ -356,7 +360,5 @@ func cleanupRDSAndSnapshot(ctx context.Context, region, restoredRDSInstanceID, s
 		}
 		fmt.Printf("RDS snapshot %s successfully deleted\n", snapshotID)
 	}
-
-	fmt.Println("Cleanup of RDS instance and snapshot completed")
 	return nil
 }

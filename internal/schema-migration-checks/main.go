@@ -8,10 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/rds"
-	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,39 +26,39 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 
-	// Check and cleanup Schema version check kustomization
-	versionCheckKustomization := &kustomizev1.Kustomization{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "schema-version-check",
-			Namespace: "cluster-config",
-		},
-	}
-	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(versionCheckKustomization), versionCheckKustomization); err == nil {
-		if err := cleanupVersionCheckKustomization(ctx, kubeClient); err != nil {
-			fmt.Printf("Warning: failed to cleanup existing version check resources: %v\n", err)
-		} else {
-			fmt.Println("Existing version check resources cleaned up")
-		}
-	} else {
-		fmt.Println("No existing version check resources to clean up")
-	}
+	// // Check and cleanup Schema version check kustomization
+	// versionCheckKustomization := &kustomizev1.Kustomization{
+	// 	ObjectMeta: metav1.ObjectMeta{
+	// 		Name:      "schema-version-check",
+	// 		Namespace: "cluster-config",
+	// 	},
+	// }
+	// if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(versionCheckKustomization), versionCheckKustomization); err == nil {
+	// 	if err := cleanupVersionCheckKustomization(ctx, kubeClient); err != nil {
+	// 		fmt.Printf("Warning: failed to cleanup existing version check resources: %v\n", err)
+	// 	} else {
+	// 		fmt.Println("Existing version check resources cleaned up")
+	// 	}
+	// } else {
+	// 	fmt.Println("No existing version check resources to clean up")
+	// }
 
-	// Check and cleanup Schema migration test kustomization and namespace
-	migrationTestKustomization := &kustomizev1.Kustomization{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "schema-migration-test",
-			Namespace: "schema-test-migrate",
-		},
-	}
-	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(migrationTestKustomization), migrationTestKustomization); err == nil {
-		if err := cleanupSchemaMigrationTestKustomizationAndNamespace(ctx, kubeClient); err != nil {
-			fmt.Printf("Warning: failed to cleanup existing schema migration test resources: %v\n", err)
-		} else {
-			fmt.Println("Existing schema migration test resources cleaned up")
-		}
-	} else {
-		fmt.Println("No existing schema migration test resources to clean up")
-	}
+	// // Check and cleanup Schema migration test kustomization and namespace
+	// migrationTestKustomization := &kustomizev1.Kustomization{
+	// 	ObjectMeta: metav1.ObjectMeta{
+	// 		Name:      "schema-migration-test",
+	// 		Namespace: "schema-test-migrate",
+	// 	},
+	// }
+	// if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(migrationTestKustomization), migrationTestKustomization); err == nil {
+	// 	if err := cleanupSchemaMigrationTestKustomizationAndNamespace(ctx, kubeClient); err != nil {
+	// 		fmt.Printf("Warning: failed to cleanup existing schema migration test resources: %v\n", err)
+	// 	} else {
+	// 		fmt.Println("Existing schema migration test resources cleaned up")
+	// 	}
+	// } else {
+	// 	fmt.Println("No existing schema migration test resources to clean up")
+	// }
 
 	// Get cluster-settings secret
 	_, err = k8sClientset.CoreV1().Namespaces().Get(ctx, "cluster-config", metav1.GetOptions{})
@@ -85,37 +81,37 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 		return fmt.Errorf("API_SERVER_VERSION environment variable must be set")
 	}
 
-	// Cleanup any RDS instance before starting
-	snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
-	restoredRDSInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+	// // Cleanup any RDS instance before starting
+	// snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+	// restoredRDSInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
 
-	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(string(secret.Data["region"])))
-	if err != nil {
-		return fmt.Errorf("unable to load SDK config: %v", err)
-	}
-	rdsClient := rds.NewFromConfig(cfg)
+	// // Get RDS client
+	// cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(string(secret.Data["region"])))
+	// if err != nil {
+	// 	return fmt.Errorf("unable to load SDK config: %v", err)
+	// }
+	// rdsClient := rds.NewFromConfig(cfg)
 
-	// Check if resources exist
-	_, err = rdsClient.DescribeDBSnapshots(ctx, &rds.DescribeDBSnapshotsInput{
-		DBSnapshotIdentifier: aws.String(snapshotID),
-	})
-	snapshotExists := err == nil
+	// // Check if resources exist
+	// _, err = rdsClient.DescribeDBSnapshots(ctx, &rds.DescribeDBSnapshotsInput{
+	// 	DBSnapshotIdentifier: aws.String(snapshotID),
+	// })
+	// snapshotExists := err == nil
 
-	_, err = rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-	})
-	instanceExists := err == nil
+	// _, err = rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+	// 	DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+	// })
+	// instanceExists := err == nil
 
-	if snapshotExists || instanceExists {
-		if err := cleanupRDSAndSnapshot(ctx, string(secret.Data["region"]), restoredRDSInstanceID, snapshotID); err != nil {
-			fmt.Printf("Warning: failed to cleanup existing RDS instance: %v\n", err)
-		} else {
-			fmt.Println("Existing RDS instance and Snapshot cleaned up")
-		}
-	} else {
-		fmt.Println("No existing RDS resources to clean up")
-	}
+	// if snapshotExists || instanceExists {
+	// 	if err := cleanupRDSAndSnapshot(ctx, string(secret.Data["region"]), apiServerVersion); err != nil {
+	// 		fmt.Printf("Warning: failed to cleanup existing RDS instance: %v\n", err)
+	// 	} else {
+	// 		fmt.Println("Existing RDS instance and Snapshot cleaned up")
+	// 	}
+	// } else {
+	// 	fmt.Println("No existing RDS resources to clean up")
+	// }
 
 	// TODO: Check if kustomization schema-migrate exists. if does not exist just return nill, because it is first time install.
 	// TODO: Check if kustomization api-server pods exist and are running. If not then abort migration and rest of the kustomization and fail it.
@@ -196,7 +192,6 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 	templateVarsForSchemaMigrationTest["test_rds_master_externalsecret"] = restoredRDSMasterSecretName
 
 	// Apply migration test kustomize
-	fmt.Println("Applying migration test kustomize...")
 	err = ApplyMigrationTestKustomize(ctx, kubeClient, k8sClientset, templateVarsForSchemaMigrationTest)
 	if err != nil {
 		fmt.Printf("Failed to apply migration test kustomize: %v\n", err)
@@ -216,11 +211,6 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 		var wg sync.WaitGroup
 		wg.Add(2)
 
-		// Get region and instance ID from template vars
-		region := templateVarsForSchemaMigrationTest["Region"]
-		restoredInstanceID := templateVarsForSchemaMigrationTest["test_rds_instance_id"]
-		snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(templateVarsForSchemaMigrationTest["ApiServerNewVersion"], ".", "-"), "-", ""))
-
 		// Start cleanup goroutines
 		go func() {
 			defer wg.Done()
@@ -235,7 +225,7 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 		go func() {
 			defer wg.Done()
 			fmt.Println("Starting cleanup of RDS and snapshot...")
-			if err := cleanupRDSAndSnapshot(context.Background(), region, restoredInstanceID, snapshotID); err != nil {
+			if err := cleanupRDSAndSnapshot(context.Background(), templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["ApiServerNewVersion"]); err != nil {
 				fmt.Printf("Failed to cleanup RDS and snapshot: %v\n", err)
 			} else {
 				fmt.Println("Successfully cleaned up RDS and snapshot")
