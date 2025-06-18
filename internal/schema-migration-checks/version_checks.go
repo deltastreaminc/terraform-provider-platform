@@ -53,10 +53,11 @@ func IsSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClie
 
 	// Use Defer pattern to cleanup resources
 	defer func() {
-		if err := cleanup(ctx, kubeClient); err != nil {
+		if err := cleanupVersionCheckKustomization(ctx, kubeClient); err != nil {
 			fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
 		}
 	}()
+
 	fmt.Println("Schema version check completed successfully")
 	if !schemaMigrationRequired {
 		return false, nil
@@ -101,7 +102,6 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 
 // This function is used to check if the schema version is newer than the new version and return false(if no migration needed) or true(if migration needed)
 func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (bool, error) {
-
 	// Start looking for pods immediately without waiting for kustomization
 	fmt.Println("Looking for schema-version-check pods...")
 	pods := &corev1.PodList{}
@@ -122,12 +122,12 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 
 	var logs []byte
 	var err error
-	for {
+	versionCheckCompleted := false
+
+	for !versionCheckCompleted {
 		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
 			return false, fmt.Errorf("failed to get pod status: %v", err)
 		}
-
-		versionCheckCompleted := false
 
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.Name == "schema-version-check" {
@@ -148,10 +148,9 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 				}
 			}
 		}
-		if versionCheckCompleted {
-			break
+		if !versionCheckCompleted {
+			time.Sleep(5 * time.Second)
 		}
-		time.Sleep(5 * time.Second)
 	}
 
 	fmt.Printf("Job logs:\n%s\n", string(logs))
@@ -188,30 +187,26 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	}
 
 	// // HARDCODE for testing
-	// status.CurrentVersion = "22"
-	// status.NewVersion = "23"
+	status.CurrentVersion = "22"
+	status.NewVersion = "23"
 
 	fmt.Printf("Parsed versions: currentVersion=%q, newVersion=%q\n", status.CurrentVersion, status.NewVersion)
 
 	// Compare versions
 	if status.CurrentVersion == status.NewVersion {
 		fmt.Printf("Versions are the same (%s), no need to run schema migration\n", status.CurrentVersion)
-		// Cleanup kustomization
-		fmt.Println("Cleaning up version check resources...")
-		if err := cleanup(ctx, kubeClient); err != nil {
-			fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
-		}
 		return false, nil
 	}
 	if status.CurrentVersion > status.NewVersion {
 		return false, fmt.Errorf("current schema version (%s) is newer than expected (%s): aborting migration", status.CurrentVersion, status.NewVersion)
 	}
 	fmt.Printf("Current version: %s, New version: %s\n", status.CurrentVersion, status.NewVersion)
-	fmt.Printf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
+	fmt.Printf("Starting schema migration from version %s to %s\n", status.CurrentVersion, status.NewVersion)
+
 	return true, nil
 }
 
-func cleanup(ctx context.Context, kubeClient client.Client) error {
+func cleanupVersionCheckKustomization(ctx context.Context, kubeClient client.Client) error {
 	// Delete Kustomization
 	kustomization := &kustomizev1.Kustomization{
 		ObjectMeta: metav1.ObjectMeta{

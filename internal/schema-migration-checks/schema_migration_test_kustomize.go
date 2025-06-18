@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -60,7 +61,7 @@ func getKubeClient() (client.Client, *kubernetes.Clientset, error) {
 }
 
 // waitForRDSMigrationKustomizationAndCheckLogs waits for a kustomization to complete and checks its logs
-func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, namespace, kustomizationName, jobName string) error {
+func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, namespace, kustomizationName, jobName string) (bool, error) {
 	// Start looking for pods immediately
 	pods := &corev1.PodList{}
 	maxAttempts := 30 // 5 minutes total
@@ -78,7 +79,7 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 	}
 
 	if len(pods.Items) == 0 {
-		return fmt.Errorf("no pods found for job after %d attempts", maxAttempts)
+		return false, fmt.Errorf("no pods found for job after %d attempts", maxAttempts)
 	}
 
 	pod := pods.Items[0]
@@ -87,16 +88,17 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 	// Get job details
 	job, err := k8sClientset.BatchV1().Jobs(namespace).Get(context.TODO(), jobName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to get job details: %v", err)
+		return false, fmt.Errorf("failed to get job details: %v", err)
 	}
 
 	// Check if job is complete
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobComplete && condition.Status == "True" {
 			fmt.Println("Job is complete!")
+			return true, nil
 		} else if condition.Type == batchv1.JobFailed && condition.Status == "True" {
 			fmt.Println("Job has failed!")
-			return fmt.Errorf("job has failed")
+			return false, fmt.Errorf("job has failed")
 		}
 	}
 
@@ -112,13 +114,13 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.State.Terminated != nil {
 				fmt.Println("Job completed successfully")
-				return nil
+				return true, nil
 			}
 		}
 		time.Sleep(10 * time.Second)
 	}
 
-	return fmt.Errorf("timed out waiting for job to complete after %d attempts", maxWaitAttempts)
+	return false, fmt.Errorf("timed out waiting for job to complete after %d attempts", maxWaitAttempts)
 }
 
 // createRDSMigrationNamespace creates a new namespace if it doesn't exist
@@ -155,7 +157,6 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 	manifests := strings.Split(result, "---")
 
 	// Apply each manifest separately
-	isFirst := true
 	for i, manifest := range manifests {
 		manifest = strings.TrimSpace(manifest)
 		if manifest == "" {
@@ -190,87 +191,63 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 		} else {
 			fmt.Printf("Successfully applied manifest %d for %s %s\n", i, kind, objName)
 		}
-
-		if isFirst {
-			fmt.Println("Waiting for OCIRepository to be ready...")
-			time.Sleep(10 * time.Second) // Give it some time to start
-			isFirst = false
-		}
 	}
 
 	return d
 }
 
-// func checkJobAndCleanup(clientset *kubernetes.Clientset, namespace, jobName string) {
-// 	job, err := clientset.BatchV1().Jobs(namespace).Get(context.TODO(), jobName, metav1.GetOptions{})
-// 	if err != nil {
-// 		fmt.Printf("Failed to get job: %v\n", err)
-// 		return
-// 	}
+// cleanupKustomizationAndNamespace deletes the kustomization and namespace
+func cleanupSchemaMigrationTestKustomizationAndNamespace(ctx context.Context, kubeClient client.Client) error {
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-// 	for _, condition := range job.Status.Conditions {
-// 		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue && condition.Reason == "CompletionsReached" {
-// 			fmt.Println("Job is complete (CompletionsReached)! Starting cleanup goroutine...")
-// 			go cleanupKustomizationAndRDS()
-// 			return
-// 		} else if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-// 			fmt.Println("Job has failed! No cleanup will be performed.")
-// 			return
-// 		}
-// 	}
-// }
+	// Delete namespace in goroutine
+	go func() {
+		defer wg.Done()
+		ns := &corev1.Namespace{}
+		nsKey := client.ObjectKey{Name: "schema-test-migrate"}
+		if err := kubeClient.Get(ctx, nsKey, ns); err == nil {
+			fmt.Println("Deleting namespace schema-test-migrate...")
+			if err := kubeClient.Delete(ctx, ns); err != nil {
+				fmt.Printf("Failed to delete namespace: %v\n", err)
+				return
+			}
+			// Wait for namespace deletion
+			for {
+				err := kubeClient.Get(ctx, nsKey, ns)
+				if err != nil {
+					fmt.Println("Namespace schema-test-migrate successfully deleted")
+					break
+				}
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}()
 
-// func cleanupKustomizationAndRDS(region, instanceID, snapshotID string) {
-// 	ctx := context.Background()
-// 	kubeClient, _, err := getKubeClient()
-// 	if err != nil {
-// 		fmt.Printf("Failed to get kube clients for cleanup: %v\n", err)
-// 		return
-// 	}
+	// Delete kustomization in goroutine
+	go func() {
+		defer wg.Done()
+		kustomization := &kustomizev1.Kustomization{}
+		kustomizationKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "schema-test-migrate"}
+		if err := kubeClient.Get(ctx, kustomizationKey, kustomization); err == nil {
+			fmt.Println("Deleting kustomization schema-migration-test...")
+			if err := kubeClient.Delete(ctx, kustomization); err != nil {
+				fmt.Printf("Failed to delete kustomization: %v\n", err)
+				return
+			}
+			// Wait for kustomization deletion
+			for {
+				err := kubeClient.Get(ctx, kustomizationKey, kustomization)
+				if err != nil {
+					fmt.Println("Kustomization schema-migration-test successfully deleted")
+					break
+				}
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}()
 
-// 	// 1. Delete namespace (schema-test-migrate) FIRST
-// 	ns := &corev1.Namespace{}
-// 	nsKey := client.ObjectKey{Name: "schema-test-migrate"}
-// 	if err := kubeClient.Get(ctx, nsKey, ns); err == nil {
-// 		fmt.Println("Deleting namespace schema-test-migrate...")
-// 		if err := kubeClient.Delete(ctx, ns); err != nil {
-// 			fmt.Printf("Failed to delete namespace: %v\n", err)
-// 		} else {
-// 			for {
-// 				err := kubeClient.Get(ctx, nsKey, ns)
-// 				if err != nil {
-// 					fmt.Println("Namespace schema-test-migrate successfully deleted")
-// 					break
-// 				}
-// 				time.Sleep(5 * time.Second)
-// 			}
-// 		}
-// 	}
-
-// 	// 2. Delete Kustomization (schema-migrate)
-// 	kustomization := &kustomizev1.Kustomization{}
-// 	kustomizationKey := client.ObjectKey{Name: "schema-migrate", Namespace: "cluster-config"}
-// 	if err := kubeClient.Get(ctx, kustomizationKey, kustomization); err == nil {
-// 		fmt.Println("Deleting Kustomization schema-migrate...")
-// 		if err := kubeClient.Delete(ctx, kustomization); err != nil {
-// 			fmt.Printf("Failed to delete kustomization: %v\n", err)
-// 		} else {
-// 			for {
-// 				err := kubeClient.Get(ctx, kustomizationKey, kustomization)
-// 				if err != nil {
-// 					fmt.Println("Kustomization schema-migrate successfully deleted")
-// 					break
-// 				}
-// 				time.Sleep(5 * time.Second)
-// 			}
-// 		}
-// 	}
-
-// 	// 3. Delete RDS instance (placeholder)
-// 	// TODO: Add RDS instance deletion logic here if needed
-
-// 	// 4. Delete snapshot (placeholder)
-// 	// TODO: Add snapshot deletion logic here if needed
-
-// 	fmt.Println("Cleanup done")
-// }
+	wg.Wait()
+	fmt.Println("Cleanup of kustomization and namespace completed")
+	return nil
+}
