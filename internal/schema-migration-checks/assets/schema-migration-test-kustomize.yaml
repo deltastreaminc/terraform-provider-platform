@@ -43,5 +43,5 @@ spec:
       topology: {{ .topology }}
       cloud: {{ .cloud }}
       dsEcrAccountID: "{{ .DsEcrAccountID }}"
-      apiServerNewVersion: "0.3.3642-363b4568c"
+      apiServerNewVersion: "0.3.3691-00afe022f"
       test_rds_schema_user: "{{ .test_rds_schema_user }}"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -212,23 +213,40 @@ func RunMigrationTest(ctx context.Context, kubeClient client.Client, k8sClientse
 	if jobCompleted {
 		fmt.Println("Job completed successfully, starting cleanup...")
 
-		// Start cleanup goroutines
-		go func() {
-			if err := cleanupSchemaMigrationTestKustomizationAndNamespace(context.Background(), kubeClient); err != nil {
-				fmt.Printf("Failed to cleanup kustomization and namespace: %v\n", err)
-			}
-		}()
+		var wg sync.WaitGroup
+		wg.Add(2)
 
 		// Get region and instance ID from template vars
 		region := templateVarsForSchemaMigrationTest["Region"]
 		restoredInstanceID := templateVarsForSchemaMigrationTest["test_rds_instance_id"]
 		snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(templateVarsForSchemaMigrationTest["ApiServerNewVersion"], ".", "-"), "-", ""))
 
+		// Start cleanup goroutines
 		go func() {
-			if err := cleanupRDSAndSnapshot(context.Background(), region, restoredInstanceID, snapshotID); err != nil {
-				fmt.Printf("Failed to cleanup RDS and snapshot: %v\n", err)
+			defer wg.Done()
+			fmt.Println("Starting cleanup of kustomization and namespace...")
+			if err := cleanupSchemaMigrationTestKustomizationAndNamespace(context.Background(), kubeClient); err != nil {
+				fmt.Printf("Failed to cleanup kustomization and namespace: %v\n", err)
+			} else {
+				fmt.Println("Successfully cleaned up kustomization and namespace")
 			}
 		}()
+
+		go func() {
+			defer wg.Done()
+			fmt.Println("Starting cleanup of RDS and snapshot...")
+			if err := cleanupRDSAndSnapshot(context.Background(), region, restoredInstanceID, snapshotID); err != nil {
+				fmt.Printf("Failed to cleanup RDS and snapshot: %v\n", err)
+			} else {
+				fmt.Println("Successfully cleaned up RDS and snapshot")
+			}
+		}()
+
+		fmt.Println("Waiting for cleanup operations to complete...")
+		wg.Wait()
+		fmt.Println("All cleanup operations completed successfully")
+	} else {
+		fmt.Println("Job did not complete successfully, skipping cleanup")
 	}
 
 	return nil

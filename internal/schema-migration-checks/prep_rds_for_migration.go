@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	_ "embed"
@@ -312,9 +311,6 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 
 // cleanupRDSAndSnapshot deletes the RDS instance and snapshot
 func cleanupRDSAndSnapshot(ctx context.Context, region, restoredRDSInstanceID, snapshotID string) error {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
 	// Get RDS client
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -322,58 +318,45 @@ func cleanupRDSAndSnapshot(ctx context.Context, region, restoredRDSInstanceID, s
 	}
 	rdsClient := rds.NewFromConfig(cfg)
 
-	// Delete RDS instance in goroutine
-	go func() {
-		defer wg.Done()
-		if restoredRDSInstanceID == "" {
-			return
-		}
+	// Delete RDS instance
+	if restoredRDSInstanceID != "" {
 		fmt.Printf("Deleting RDS instance %s...\n", restoredRDSInstanceID)
 		_, err := rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
 			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 			SkipFinalSnapshot:    aws.Bool(true),
 		})
 		if err != nil {
-			fmt.Printf("Failed to delete RDS instance: %v\n", err)
-			return
+			return fmt.Errorf("failed to delete RDS instance: %v", err)
 		}
 		// Wait for instance deletion
 		waiter := rds.NewDBInstanceDeletedWaiter(rdsClient)
 		if err := waiter.Wait(ctx, &rds.DescribeDBInstancesInput{
 			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 		}, 30*time.Minute); err != nil {
-			fmt.Printf("Failed waiting for RDS instance deletion: %v\n", err)
-			return
+			return fmt.Errorf("failed waiting for RDS instance deletion: %v", err)
 		}
 		fmt.Printf("RDS instance %s successfully deleted\n", restoredRDSInstanceID)
-	}()
+	}
 
-	// Delete snapshot in goroutine
-	go func() {
-		defer wg.Done()
-		if snapshotID == "" {
-			return
-		}
+	// Delete snapshot
+	if snapshotID != "" {
 		fmt.Printf("Deleting RDS snapshot %s...\n", snapshotID)
 		_, err := rdsClient.DeleteDBSnapshot(ctx, &rds.DeleteDBSnapshotInput{
 			DBSnapshotIdentifier: aws.String(snapshotID),
 		})
 		if err != nil {
-			fmt.Printf("Failed to delete RDS snapshot: %v\n", err)
-			return
+			return fmt.Errorf("failed to delete RDS snapshot: %v", err)
 		}
 		// Wait for snapshot deletion
 		waiter := rds.NewDBSnapshotDeletedWaiter(rdsClient)
 		if err := waiter.Wait(ctx, &rds.DescribeDBSnapshotsInput{
 			DBSnapshotIdentifier: aws.String(snapshotID),
 		}, 30*time.Minute); err != nil {
-			fmt.Printf("Failed waiting for RDS snapshot deletion: %v\n", err)
-			return
+			return fmt.Errorf("failed waiting for RDS snapshot deletion: %v", err)
 		}
 		fmt.Printf("RDS snapshot %s successfully deleted\n", snapshotID)
-	}()
+	}
 
-	wg.Wait()
 	fmt.Println("Cleanup of RDS instance and snapshot completed")
 	return nil
 }
