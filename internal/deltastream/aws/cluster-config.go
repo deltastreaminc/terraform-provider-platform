@@ -128,7 +128,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"infraID":                          []byte(config.InfraId.ValueString()),
 			"infraName":                        []byte("ds-" + config.InfraId.ValueString()),
 			"infraType":                        []byte(config.InfraType.ValueString()),
-			"enableKoalaTracking":              []byte(enableKoalaTracking),
+			"enableKoalaTracking":              []byte(`"` + enableKoalaTracking + `"`),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
 			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
