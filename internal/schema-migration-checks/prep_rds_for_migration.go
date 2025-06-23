@@ -22,6 +22,15 @@ import (
 //go:embed assets/schema-migration-test-kustomize.yaml
 var schemaMigrationTestKustomize string
 
+// Helper functions for generating consistent resource names
+func generateSnapshotID(infraID, apiServerVersion string) string {
+	return fmt.Sprintf("schema-migration-test-ds-%s-%s", infraID, strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+}
+
+func generateRDSInstanceID(infraID, apiServerVersion string) string {
+	return fmt.Sprintf("schema-migration-test-ds-%s-%s", infraID, strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
+}
+
 // GetDeploymentConfig gets configuration from AWS Secrets Manager
 func GetDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourceID string) (map[string]interface{}, error) {
 	cfg, err := config.LoadDefaultConfig(ctx,
@@ -54,31 +63,29 @@ func GetDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourc
 }
 
 // CreateRDSSnapshot creates a snapshot of the RDS instance
-func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInstanceIdentifier string, apiServerVersion string) (string, error) {
-	fmt.Printf("mainRDSDBInstanceIdentifier: %q (len=%d)\n", mainRDSDBInstanceIdentifier, len(mainRDSDBInstanceIdentifier))
+func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInstanceIdentifier string, apiServerVersion string, infraID string) (string, error) {
 	var err error
-	snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
-	fmt.Printf("Checking for existing snapshot %s...\n", snapshotID)
+	snapshotID := generateSnapshotID(infraID, apiServerVersion)
 
 	// Create new snapshot
 	fmt.Printf("Creating new snapshot %s from instance %s...\n", snapshotID, mainRDSDBInstanceIdentifier)
 	input := &rds.CreateDBSnapshotInput{
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 		DBSnapshotIdentifier: aws.String(snapshotID),
+		Tags: []types.Tag{
+			{
+				Key:   aws.String("deltastream-schema-check"),
+				Value: aws.String(fmt.Sprintf("ds-%s", infraID)),
+			},
+		},
 	}
 
 	_, err = rdsClient.CreateDBSnapshot(ctx, input)
 	if err != nil {
-		// If snapshot already exists, just continue
-		if strings.Contains(err.Error(), "DBSnapshotAlreadyExists") {
-			fmt.Printf("Snapshot %s already exists, will use it\n", snapshotID)
-		} else {
-			return "", fmt.Errorf("failed to create RDS snapshot: %v", err)
-		}
+		return "", fmt.Errorf("failed to create RDS snapshot %s: %v", snapshotID, err)
 	}
 
 	// Wait for snapshot to be available
-	fmt.Printf("Waiting for snapshot %s to become available...\n", snapshotID)
 	waiter := rds.NewDBSnapshotAvailableWaiter(rdsClient)
 	err = waiter.Wait(ctx, &rds.DescribeDBSnapshotsInput{
 		DBSnapshotIdentifier: aws.String(snapshotID),
@@ -92,19 +99,8 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInst
 }
 
 // CreateTestRDSInstance creates a new RDS instance from snapshot for testing
-func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotID string, apiServerVersion string, mainRDSDBInstanceIdentifier string) (string, error) {
-	restoredRDSInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
-	fmt.Printf("Checking for existing instance %s...\n", restoredRDSInstanceID)
-
-	// Check if instance already exists
-	describeInput := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-	}
-	existingInstances, err := rdsClient.DescribeDBInstances(ctx, describeInput)
-	if err == nil && len(existingInstances.DBInstances) > 0 {
-		fmt.Printf("Instance %s already exists, using it\n", restoredRDSInstanceID)
-		return restoredRDSInstanceID, nil
-	}
+func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotID string, apiServerVersion string, mainRDSDBInstanceIdentifier string, infraID string) (string, error) {
+	restoredRDSInstanceID := generateRDSInstanceID(infraID, apiServerVersion)
 
 	// Create tags that explicitly mark this as a test instance
 	tags := []types.Tag{
@@ -115,6 +111,10 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		{
 			Key:   aws.String("DoNotUse"),
 			Value: aws.String("true"),
+		},
+		{
+			Key:   aws.String("deltastream-schema-check"),
+			Value: aws.String(fmt.Sprintf("ds-%s", infraID)),
 		},
 	}
 
@@ -166,12 +166,12 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	return restoredRDSInstanceID, nil
 }
 
-func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string) error {
-	fmt.Printf("Enabling managed password for instance %s...\n", restoredRDSInstanceID)
+func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string, kmsKeyID string) error {
+	fmt.Printf("Enabling managed password for instance %s with KMS key %s...\n", restoredRDSInstanceID, kmsKeyID)
 	modifyInput := &rds.ModifyDBInstanceInput{
 		DBInstanceIdentifier:     aws.String(restoredRDSInstanceID),
 		ManageMasterUserPassword: aws.Bool(true),
-		MasterUserSecretKmsKeyId: aws.String("alias/aws/secretsmanager"),
+		MasterUserSecretKmsKeyId: aws.String(kmsKeyID),
 		ApplyImmediately:         aws.Bool(true),
 	}
 	_, err := rdsClient.ModifyDBInstance(ctx, modifyInput)
@@ -216,7 +216,7 @@ func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSIns
 }
 
 // PrepareRDSForMigration prepares RDS for migration
-func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, newApiServerVersion string, mainRDSDBInstanceIdentifier string, region string) (restoredRDSInstanceID string, restoredRDSEndpoint string, restoredRDSMasterSecretName string, err error) {
+func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID string, restoredRDSEndpoint string, restoredRDSMasterSecretName string, snapshotID string, err error) {
 	fmt.Println("Starting RDS preparation for migration...")
 
 	// Get RDS client
@@ -224,32 +224,50 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 		config.WithRegion(region),
 	)
 	if err != nil {
-		return "", "", "", fmt.Errorf("unable to load SDK config: %v", err)
+		return "", "", "", "", fmt.Errorf("unable to load SDK config: %v", err)
 	}
 	rdsClient := rds.NewFromConfig(cfg)
 
 	// Create new snapshot
-	snapshotID, err := CreateRDSSnapshot(ctx, rdsClient, mainRDSDBInstanceIdentifier, newApiServerVersion)
+	snapshotID, err = CreateRDSSnapshot(ctx, rdsClient, mainRDSDBInstanceIdentifier, ApiServerVersion, infraID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create RDS snapshot: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to create RDS snapshot: %v", err)
 	}
 	fmt.Printf("Using snapshot: %s\n", snapshotID)
 
 	// Create test RDS instance
-	restoredRDSInstanceID, err = CreateTestRDSInstance(ctx, rdsClient, snapshotID, newApiServerVersion, mainRDSDBInstanceIdentifier)
+	restoredRDSInstanceID, err = CreateTestRDSInstance(ctx, rdsClient, snapshotID, ApiServerVersion, mainRDSDBInstanceIdentifier, infraID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create test RDS instance: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to create test RDS instance: %v", err)
 	}
 	fmt.Printf("Created test RDS instance: %s\n", restoredRDSInstanceID)
 
+	// Get KMS key from main instance
+	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
+	})
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to get main instance details: %v", err)
+	}
+	if len(mainInstance.DBInstances) == 0 {
+		return "", "", "", "", fmt.Errorf("main instance %s not found", mainRDSDBInstanceIdentifier)
+	}
+	mainDB := mainInstance.DBInstances[0]
+	kmsKeyID := ""
+	if mainDB.KmsKeyId != nil {
+		kmsKeyID = *mainDB.KmsKeyId
+	} else {
+		return "", "", "", "", fmt.Errorf("main RDS instance does not have a KMS key")
+	}
+
 	// Enable managed password and wait for secret
-	if err := enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID); err != nil {
-		return "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
+	if err := enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID, kmsKeyID); err != nil {
+		return "", "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
 	}
 
 	secretArn, restoredRDSMasterSecretName, err := waitForRDSSecret(ctx, rdsClient, restoredRDSInstanceID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to wait for RDS secret: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to wait for RDS secret: %v", err)
 	}
 	fmt.Printf("RDS secret created: %s\n", secretArn)
 
@@ -258,15 +276,15 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 	})
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get instance details: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to get instance details: %v", err)
 	}
 	if len(instanceDetails.DBInstances) == 0 {
-		return "", "", "", fmt.Errorf("instance %s not found", restoredRDSInstanceID)
+		return "", "", "", "", fmt.Errorf("instance %s not found", restoredRDSInstanceID)
 	}
 	endpoint := *instanceDetails.DBInstances[0].Endpoint.Address
 	restoredRDSEndpoint = endpoint
 
-	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, nil
+	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
 }
 
 func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVarsForSchemaMigrationTest map[string]string) error {
@@ -306,59 +324,5 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 		return err
 	}
 
-	return nil
-}
-
-// cleanupRDSAndSnapshot deletes the RDS instance and snapshot
-func cleanupRDSAndSnapshot(ctx context.Context, region, apiServerVersion string) error {
-	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
-	if err != nil {
-		return fmt.Errorf("unable to load SDK config: %v", err)
-	}
-	rdsClient := rds.NewFromConfig(cfg)
-
-	// Generate IDs based on API server version
-	restoredRDSInstanceID := fmt.Sprintf("schema-migration-test-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
-	snapshotID := fmt.Sprintf("schema-migration-%s", strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
-
-	// Delete RDS instance
-	if restoredRDSInstanceID != "" {
-		fmt.Printf("Deleting RDS instance %s...\n", restoredRDSInstanceID)
-		_, err := rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
-			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-			SkipFinalSnapshot:    aws.Bool(true),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to delete RDS instance: %v", err)
-		}
-		// Wait for instance deletion
-		waiter := rds.NewDBInstanceDeletedWaiter(rdsClient)
-		if err := waiter.Wait(ctx, &rds.DescribeDBInstancesInput{
-			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-		}, 30*time.Minute); err != nil {
-			return fmt.Errorf("failed waiting for RDS instance deletion: %v", err)
-		}
-		fmt.Printf("RDS instance %s successfully deleted\n", restoredRDSInstanceID)
-	}
-
-	// Delete snapshot
-	if snapshotID != "" {
-		fmt.Printf("Deleting RDS snapshot %s...\n", snapshotID)
-		_, err := rdsClient.DeleteDBSnapshot(ctx, &rds.DeleteDBSnapshotInput{
-			DBSnapshotIdentifier: aws.String(snapshotID),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to delete RDS snapshot: %v", err)
-		}
-		// Wait for snapshot deletion
-		waiter := rds.NewDBSnapshotDeletedWaiter(rdsClient)
-		if err := waiter.Wait(ctx, &rds.DescribeDBSnapshotsInput{
-			DBSnapshotIdentifier: aws.String(snapshotID),
-		}, 30*time.Minute); err != nil {
-			return fmt.Errorf("failed waiting for RDS snapshot deletion: %v", err)
-		}
-		fmt.Printf("RDS snapshot %s successfully deleted\n", snapshotID)
-	}
 	return nil
 }

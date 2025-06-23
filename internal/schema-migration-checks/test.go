@@ -32,8 +32,16 @@ func main() {
 	defer cancel()
 
 	// Run migration test
-	if err := RunMigrationTest(ctx, kubeClient, k8sClientset); err != nil {
+	success, err := RunMigrationTestBeforeUpgrade(ctx, kubeClient, k8sClientset)
+	if err != nil {
 		fmt.Printf("Migration test failed: %v\n", err)
 		os.Exit(1)
 	}
+
+	if !success {
+		fmt.Println("Migration test did not complete successfully")
+		os.Exit(1)
+	}
+
+	fmt.Println("Migration test completed successfully")
 }

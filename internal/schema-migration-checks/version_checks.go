@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"text/template"
 	"time"
 
@@ -15,8 +14,9 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"gopkg.in/yaml.v3"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -54,8 +54,23 @@ func IsSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClie
 
 	// Use Defer pattern to cleanup resources
 	defer func() {
-		if err := cleanupVersionCheckKustomization(ctx, kubeClient); err != nil {
-			fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
+		// Start cleanup in background with wait
+		cleanupDone := make(chan struct{})
+		go func() {
+			if err := cleanupVersionCheckKustomization(kubeClient); err != nil {
+				fmt.Printf("Warning: failed to cleanup version check resources: %v\n", err)
+			} else {
+				fmt.Println("Version check cleanup completed successfully")
+			}
+			close(cleanupDone)
+		}()
+
+		// Wait for cleanup with timeout
+		select {
+		case <-cleanupDone:
+			fmt.Println("Version check cleanup completed")
+		case <-time.After(5 * time.Minute):
+			fmt.Println("Version check cleanup timeout - continuing anyway")
 		}
 	}()
 
@@ -207,50 +222,50 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	return true, nil
 }
 
-func cleanupVersionCheckKustomization(ctx context.Context, kubeClient client.Client) error {
-	var wg sync.WaitGroup
-	wg.Add(1)
+func cleanupVersionCheckKustomization(kubeClient client.Client) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
+	defer cancel()
 
-	// Delete Kustomization in goroutine
-	go func() {
-		defer wg.Done()
-		kustomization := &kustomizev1.Kustomization{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "schema-version-check",
-				Namespace: "cluster-config",
-			},
+	fmt.Println("Cleaning up version check resources...")
+
+	// Sometimes Kustomization is stuck in deleting state, so we need to force delete it
+	// Delete Jobs and Pods first
+	jobList := &batchv1.JobList{}
+	if err := kubeClient.List(cleanupCtx, jobList, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err == nil {
+		for _, job := range jobList.Items {
+			fmt.Printf("Deleting Job: %s\n", job.Name)
+			kubeClient.Delete(cleanupCtx, &job, client.GracePeriodSeconds(0))
 		}
+	}
 
-		// First delete the Kustomization
-		if err := kubeClient.Delete(ctx, kustomization); err != nil {
-			fmt.Printf("Failed to delete kustomization: %v\n", err)
-			return
+	podList := &corev1.PodList{}
+	if err := kubeClient.List(cleanupCtx, podList, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err == nil {
+		for _, pod := range podList.Items {
+			fmt.Printf("Deleting Pod: %s\n", pod.Name)
+			kubeClient.Delete(cleanupCtx, &pod, client.GracePeriodSeconds(0))
 		}
+	}
 
-		// Wait for Kustomization to be fully deleted
-		fmt.Println("Waiting for Schema Version Check Kustomization to be deleted...")
-		for {
-			select {
-			case <-ctx.Done():
-				fmt.Printf("Context cancelled while waiting for Schema Version Check Kustomization deletion\n")
-				return
-			default:
-				err := kubeClient.Get(ctx, client.ObjectKey{
-					Name:      "schema-version-check",
-					Namespace: "cluster-config",
-				}, kustomization)
-				if err != nil {
-					// Resource not found means it's deleted
-					fmt.Println("Kustomization successfully deleted")
-					return
+	// Delete Kustomization
+	kustomization := &kustomizev1.Kustomization{}
+	if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, kustomization); err == nil {
+		fmt.Println("Deleting kustomization schema-version-check...")
+		kubeClient.Delete(cleanupCtx, kustomization)
+	}
+
+	// Wait for deletion
+	for {
+		select {
+		case <-cleanupCtx.Done():
+			return fmt.Errorf("cleanup timeout")
+		default:
+			if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, kustomization); err != nil {
+				if apierrors.IsNotFound(err) {
+					fmt.Println("Cleanup completed")
+					return nil
 				}
-				time.Sleep(5 * time.Second)
-				continue
 			}
+			time.Sleep(5 * time.Second)
 		}
-	}()
-
-	wg.Wait()
-	fmt.Println("Cleanup of version check kustomization completed")
-	return nil
+	}
 }
