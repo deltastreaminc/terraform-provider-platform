@@ -79,12 +79,6 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}
 	fmt.Printf("Latest API server version: %s\n", apiServerVersion)
 
-	// apiServerVersion := os.Getenv("API_SERVER_VERSION")
-	// if apiServerVersion == "" {
-	// 	fmt.Println("API_SERVER_VERSION environment variable must be set")
-	// 	return false, fmt.Errorf("API_SERVER_VERSION environment variable must be set")
-	// }
-
 	// Check and cleanup Schema Restored RDS Instance and Snapshots
 	restoredRDSInstanceID := generateRDSInstanceID(string(secret.Data["infraID"]), apiServerVersion)
 	snapshotID := generateSnapshotID(string(secret.Data["infraID"]), apiServerVersion)
@@ -328,7 +322,6 @@ func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationT
 
 	// Delete snapshot
 	snapshotID := templateVarsForSchemaMigrationTest["snapshot_id"]
-	fmt.Printf("Debug: snapshot_id from templateVars: %q\n", snapshotID)
 	if snapshotID == "" {
 		snapshotID = generateSnapshotID(templateVarsForSchemaMigrationTest["infraID"], templateVarsForSchemaMigrationTest["ApiServerNewVersion"])
 		fmt.Printf("Debug: using fallback snapshot_id: %q\n", snapshotID)
