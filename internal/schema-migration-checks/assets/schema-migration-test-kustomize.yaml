@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: 0.0.31-schema-version-check
+    tag: 0.0.32-schema-version-check
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -43,5 +43,5 @@ spec:
       topology: {{ .topology }}
       cloud: {{ .cloud }}
       dsEcrAccountID: "{{ .DsEcrAccountID }}"
-      apiServerNewVersion: "0.3.3691-00afe022f"
+      apiServerNewVersion: "{{ .ApiServerNewVersion }}"
       test_rds_schema_user: "{{ .test_rds_schema_user }}"
