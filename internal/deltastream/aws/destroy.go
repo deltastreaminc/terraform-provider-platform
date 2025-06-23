@@ -170,7 +170,6 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 			tflog.Warn(ctx, "Timeout while waiting for services to be deleted - some services may still exist, but continuing with teardown", map[string]any{
 				"namespace": namespace,
 			})
-			// Don't return an error here - let the teardown continue
 			// The verifyNLBDeletion function will handle any remaining NLBs
 			return d
 		case <-ticker.C:
