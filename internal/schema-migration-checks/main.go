@@ -335,8 +335,6 @@ func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationT
 	} else {
 		fmt.Printf("RDS snapshot %s deletion initiated\n", snapshotID)
 	}
-
-	fmt.Println("Successfully cleaned up RDS and snapshot")
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
