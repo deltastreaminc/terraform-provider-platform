@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -237,25 +236,15 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}
 
 	// Call cleanup functions
-	var wg sync.WaitGroup
-
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient)
 	}()
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationTest)
 	}()
 
-	// Wait for cleanup goroutines to complete.
-	// This is safe because both cleanup functions have internal timeouts.
-	wg.Wait()
-	fmt.Println("Cleanup tasks have completed.")
-
+	fmt.Println("Cleanup started in background - continuing...")
 	return jobCompleted, nil
 }
 
