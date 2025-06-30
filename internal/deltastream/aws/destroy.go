@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -165,7 +167,10 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 			d.AddError("Context cancelled while waiting for service deletion", ctx.Err().Error())
 			return d
 		case <-timeout:
-			d.AddError("Timeout while waiting for services to be deleted", "Some services may still exist")
+			tflog.Warn(ctx, "Timeout while waiting for services to be deleted - some services may still exist, but continuing with teardown", map[string]any{
+				"namespace": namespace,
+			})
+			// The verifyNLBDeletion function will handle any remaining NLBs
 			return d
 		case <-ticker.C:
 			remaining := &corev1.ServiceList{}
@@ -192,6 +197,98 @@ func deleteIngressNLB(ctx context.Context, kubeClient *util.RetryableClient, nam
 	}
 }
 
+// verifyNLBDeletion checks if any NLBs with the cluster tag still exist in AWS
+func verifyNLBDeletion(ctx context.Context, kubeClient *util.RetryableClient, cfg aws.Config, clusterName string) (d diag.Diagnostics) {
+	d = diag.Diagnostics{}
+
+	// Create ELB client
+	elbClient := elasticloadbalancingv2.NewFromConfig(cfg)
+
+	// List all load balancers
+	input := &elasticloadbalancingv2.DescribeLoadBalancersInput{}
+	result, err := elbClient.DescribeLoadBalancers(ctx, input)
+	if err != nil {
+		d.AddError("Failed to list NLBs in AWS", err.Error())
+		return
+	}
+
+	var nlbARNs []string
+	for _, lb := range result.LoadBalancers {
+		tagsInput := &elasticloadbalancingv2.DescribeTagsInput{
+			ResourceArns: []string{*lb.LoadBalancerArn},
+		}
+		tagsResult, err := elbClient.DescribeTags(ctx, tagsInput)
+		if err != nil {
+			tflog.Debug(ctx, "Failed to get tags for NLB", map[string]any{
+				"arn":   *lb.LoadBalancerArn,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		for _, tag := range tagsResult.TagDescriptions[0].Tags {
+			if *tag.Key == "elbv2.k8s.aws/cluster" && *tag.Value == clusterName {
+				nlbARNs = append(nlbARNs, *lb.LoadBalancerArn)
+				tflog.Debug(ctx, "Found NLB with cluster tag", map[string]any{
+					"arn":  *lb.LoadBalancerArn,
+					"name": *lb.LoadBalancerName,
+				})
+				break
+			}
+		}
+	}
+
+	// If we found NLBs with our cluster tag, try to delete them directly via AWS SDK
+	if len(nlbARNs) > 0 {
+		tflog.Debug(ctx, "Attempting to delete NLBs directly via AWS SDK", map[string]any{
+			"count": len(nlbARNs),
+		})
+
+		for _, arn := range nlbARNs {
+			// First, disable deletion protection
+			_, err := elbClient.ModifyLoadBalancerAttributes(ctx, &elasticloadbalancingv2.ModifyLoadBalancerAttributesInput{
+				LoadBalancerArn: &arn,
+				Attributes: []types.LoadBalancerAttribute{
+					{
+						Key:   aws.String("deletion_protection.enabled"),
+						Value: aws.String("false"),
+					},
+				},
+			})
+			if err != nil {
+				tflog.Debug(ctx, "Failed to disable deletion protection for NLB", map[string]any{
+					"arn":   arn,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			// Wait for the deletion protection change to take effect
+			time.Sleep(20 * time.Second)
+
+			_, err = elbClient.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{
+				LoadBalancerArn: &arn,
+			})
+			if err != nil {
+				tflog.Debug(ctx, "Failed to delete NLB directly", map[string]any{
+					"arn":   arn,
+					"error": err.Error(),
+				})
+			} else {
+				tflog.Debug(ctx, "Successfully initiated deletion of NLB", map[string]any{
+					"arn": arn,
+				})
+			}
+		}
+
+		d.AddError("NLBs still exist in AWS", fmt.Sprintf("Found %d NLBs with cluster tag value %s that should have been deleted. Attempted direct deletion via AWS SDK.", len(nlbARNs), clusterName))
+		return
+	}
+
+	tflog.Debug(ctx, "Final verification complete: No NLBs found with cluster tag", map[string]any{"cluster": clusterName})
+	return
+}
+
 func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d diag.Diagnostics) {
 	kubeClient, err := util.GetKubeClient(ctx, cfg, dp)
 	if err != nil {
@@ -205,6 +302,17 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	d.Append(deleteIngressNLB(ctx, kubeClient, "ingress")...)
+	if d.HasError() {
+		return
+	}
+
+	clusterName, err := util.GetKubeClusterName(ctx, dp)
+	if err != nil {
+		d.AddError("failed to get cluster name", err.Error())
+		return
+	}
+
+	d.Append(verifyNLBDeletion(ctx, kubeClient, cfg, clusterName)...)
 	if d.HasError() {
 		return
 	}
@@ -296,5 +404,4 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 	}
 
 	return
-
 }

@@ -87,6 +87,13 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	}
 	sort.Strings(clusterPublicSubnetIDs)
 
+	nodepoolInstanceTypes := []string{}
+	d.Append(config.NodepoolInstanceTypes.ElementsAs(ctx, &nodepoolInstanceTypes, false)...)
+	if d.HasError() {
+		return
+	}
+	sort.Strings(nodepoolInstanceTypes)
+
 	customCredentialsEnabled := "disabled"
 	if !(config.CustomCredentialsRoleARN.IsNull() || config.CustomCredentialsRoleARN.IsUnknown()) {
 		customCredentialsEnabled = "enabled"
@@ -96,6 +103,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	clusterSubnetId3 := clusterSubnetId1
 	if len(clusterSubnetIds) >= 3 {
 		clusterSubnetId3 = clusterSubnetIds[2]
+	}
+
+	enableKoalaTracking := "false"
+	if config.InfraType.ValueString() == "trial_multi_tenant" {
+		enableKoalaTracking = "true"
 	}
 
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
@@ -116,9 +128,13 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"infraID":                          []byte(config.InfraId.ValueString()),
 			"infraName":                        []byte("ds-" + config.InfraId.ValueString()),
 			"infraType":                        []byte(config.InfraType.ValueString()),
+			"enableKoalaTracking":              []byte(`"` + enableKoalaTracking + `"`),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
 			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
+			"nodepoolCapacityType":             []byte(config.NodepoolCapacityType.ValueString()),
+			"nodepoolInstanceTypes":            []byte(`["` + strings.Join(nodepoolInstanceTypes, `","`) + `"]`),
+			"nodepoolCpuLimit":                 []byte(fmt.Sprintf("%d", config.NodepoolCpuLimit.ValueInt32())),
 			"vpnMode":                          []byte(config.VpnMode.ValueString()),
 			"tailscaleNamespace":               []byte("tailscale-" + config.InfraId.ValueString()),
 			"vpcId":                            []byte(config.VpcId.ValueString()),
