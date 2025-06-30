@@ -96,7 +96,7 @@ const deploymentConfigTmpl = `
     },
     "orbBillingBucket": {
       "name": "{{ .OrbBillingBucket }}",
-      "region": "{{ .Region }}",
+      "region": "{{ .OrbBillingBucketRegion }}",
 	  "endpoint": "s3.{{ .OrbBillingBucketRegion }}.amazonaws.com",
 	  "insecureSkipVerify": false
     },
