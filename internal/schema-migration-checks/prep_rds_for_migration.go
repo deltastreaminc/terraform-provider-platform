@@ -68,7 +68,6 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInst
 	snapshotID := generateSnapshotID(infraID, apiServerVersion)
 
 	// Create new snapshot
-	fmt.Printf("Creating new snapshot %s from instance %s...\n", snapshotID, mainRDSDBInstanceIdentifier)
 	input := &rds.CreateDBSnapshotInput{
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 		DBSnapshotIdentifier: aws.String(snapshotID),
@@ -93,7 +92,6 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInst
 	if err != nil {
 		return "", fmt.Errorf("failed waiting for RDS snapshot: %v", err)
 	}
-	fmt.Printf("Snapshot %s is now available\n", snapshotID)
 
 	return snapshotID, nil
 }
@@ -119,7 +117,6 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	}
 
 	// Get network settings from the main instance to ensure test instance is in the same network
-	fmt.Printf("Getting network settings from main instance %s...\n", mainRDSDBInstanceIdentifier)
 	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 	})
@@ -153,7 +150,6 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		return "", fmt.Errorf("failed to create test RDS instance: %v", err)
 	}
 
-	fmt.Printf("Waiting for restore instance %s to become available...\n", restoredRDSInstanceID)
 	waiter := rds.NewDBInstanceAvailableWaiter(rdsClient)
 	err = waiter.Wait(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
@@ -161,13 +157,11 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	if err != nil {
 		return "", fmt.Errorf("failed waiting for test RDS instance: %v", err)
 	}
-	fmt.Printf("Restore instance %s is now available\n", restoredRDSInstanceID)
 
 	return restoredRDSInstanceID, nil
 }
 
 func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string, kmsKeyID string) error {
-	fmt.Printf("Enabling managed password for instance %s with KMS key %s...\n", restoredRDSInstanceID, kmsKeyID)
 	modifyInput := &rds.ModifyDBInstanceInput{
 		DBInstanceIdentifier:     aws.String(restoredRDSInstanceID),
 		ManageMasterUserPassword: aws.Bool(true),
@@ -182,7 +176,7 @@ func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredR
 }
 
 func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string) (string, string, error) {
-	fmt.Printf("Waiting for RDS secret to be created...\n")
+
 	var secretArn string
 	for i := 0; i < 30; i++ {
 		instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
@@ -195,7 +189,7 @@ func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSIns
 			instance := instanceDetails.DBInstances[0]
 			if instance.MasterUserSecret != nil {
 				secretArn = *instance.MasterUserSecret.SecretArn
-				fmt.Printf("Password secret created: %s\n", secretArn)
+
 				break
 			}
 		}
@@ -210,14 +204,12 @@ func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSIns
 	if idx := strings.LastIndex(restoredRDSMasterSecretName, "-"); idx != -1 {
 		restoredRDSMasterSecretName = restoredRDSMasterSecretName[:idx]
 	}
-	fmt.Printf("Secret name: %s\n", restoredRDSMasterSecretName)
 
 	return secretArn, restoredRDSMasterSecretName, nil
 }
 
 // PrepareRDSForMigration prepares RDS for migration
 func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID string, restoredRDSEndpoint string, restoredRDSMasterSecretName string, snapshotID string, err error) {
-	fmt.Println("Starting RDS preparation for migration...")
 
 	// Get RDS client
 	cfg, err := config.LoadDefaultConfig(ctx,
@@ -233,14 +225,12 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to create RDS snapshot: %v", err)
 	}
-	fmt.Printf("Using snapshot: %s\n", snapshotID)
 
 	// Create test RDS instance
 	restoredRDSInstanceID, err = CreateTestRDSInstance(ctx, rdsClient, snapshotID, ApiServerVersion, mainRDSDBInstanceIdentifier, infraID)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to create test RDS instance: %v", err)
 	}
-	fmt.Printf("Created test RDS instance: %s\n", restoredRDSInstanceID)
 
 	// Get KMS key from main instance
 	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
@@ -265,11 +255,10 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 		return "", "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
 	}
 
-	secretArn, restoredRDSMasterSecretName, err := waitForRDSSecret(ctx, rdsClient, restoredRDSInstanceID)
+	_, restoredRDSMasterSecretName, err = waitForRDSSecret(ctx, rdsClient, restoredRDSInstanceID)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to wait for RDS secret: %v", err)
 	}
-	fmt.Printf("RDS secret created: %s\n", secretArn)
 
 	// Get RDS endpoint
 	instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
@@ -288,9 +277,6 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 }
 
 func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVarsForSchemaMigrationTest map[string]string) error {
-	// Now render and apply template with the RDS endpoint and secret name
-	fmt.Println("Rendering and applying template...")
-
 	// Split the template into individual manifests
 	manifests := strings.Split(schemaMigrationTestKustomize, "---")
 
@@ -302,26 +288,24 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 		retryableClient := &util.RetryableClient{Client: kubeClient}
 		diags := RenderAndApplyMigrationTemplate(ctx, retryableClient, fmt.Sprintf("schema-migration-test-%d", i), []byte(manifest), templateVarsForSchemaMigrationTest)
 		if diags.HasError() {
+			// Collect all error messages
+			var errorMsgs []string
 			for _, diag := range diags {
-				fmt.Printf("Error: %s - %s\n", diag.Summary(), diag.Detail())
+				errorMsgs = append(errorMsgs, fmt.Sprintf("%s: %s", diag.Summary(), diag.Detail()))
 			}
-			return fmt.Errorf("error rendering and applying template: %v", diags)
+			return fmt.Errorf("error rendering and applying template: %s", strings.Join(errorMsgs, "; "))
 		}
 
 		// If this is the OCIRepository manifest (first one), wait for it to be ready
 		if i == 0 {
-			fmt.Println("Waiting for OCIRepository to be ready...")
 			time.Sleep(10 * time.Second) // Give it some time to start
 		}
 	}
-	fmt.Println("All manifests applied successfully")
 
 	// Wait for kustomization and check logs
-	fmt.Println("Waiting for kustomization and checking job status...")
 	_, err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
 	if err != nil {
-		fmt.Printf("Warning: error waiting for kustomization: %v\n", err)
-		return err
+		return fmt.Errorf("failed waiting for kustomization: %v", err)
 	}
 
 	return nil
