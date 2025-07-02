@@ -46,11 +46,9 @@ func main() {
 	}
 	if !success {
 		d.AddError("Migration test did not complete successfully", "Job did not complete successfully")
-		errorMsg := fmt.Sprintf("Migration test did not complete successfully")
-		fmt.Printf("%s\n", errorMsg)
 		os.Exit(1)
 	}
 
-	successMsg := fmt.Sprintf("Migration test completed successfully")
+	successMsg := "Migration test completed successfully"
 	fmt.Printf("%s\n", successMsg)
 }

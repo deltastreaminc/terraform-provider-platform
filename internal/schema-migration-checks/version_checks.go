@@ -181,10 +181,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	}
 	versionJSON := strings.Join(jsonLines, "\n")
 
-	// Print logs using fmt.Sprintf
-	logMsg := fmt.Sprintf("Job logs:\n%s", string(logs))
-	fmt.Printf("%s\n", logMsg)
-
+	// Print only the version JSON
 	versionJSONMsg := fmt.Sprintf("Found version JSON:\n%s", versionJSON)
 	fmt.Printf("%s\n", versionJSONMsg)
 
@@ -192,10 +189,6 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	if err := json.Unmarshal([]byte(versionJSON), &status); err != nil {
 		return false, fmt.Errorf("failed to parse JSON response: %v", err)
 	}
-
-	// // HARDCODE for testing
-	status.CurrentVersion = "22"
-	status.NewVersion = "23"
 
 	// Print parsed versions using fmt.Sprintf
 	versionsMsg := fmt.Sprintf("Parsed versions: currentVersion=%q, newVersion=%q", status.CurrentVersion, status.NewVersion)
@@ -210,10 +203,6 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	if status.CurrentVersion > status.NewVersion {
 		return false, fmt.Errorf("current schema version (%s) is newer than expected (%s): aborting migration", status.CurrentVersion, status.NewVersion)
 	}
-
-	// Print migration info using fmt.Sprintf
-	migrationMsg := fmt.Sprintf("Current version: %s, New version: %s", status.CurrentVersion, status.NewVersion)
-	fmt.Printf("%s\n", migrationMsg)
 
 	startMigrationMsg := fmt.Sprintf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
 	fmt.Printf("%s\n", startMigrationMsg)
