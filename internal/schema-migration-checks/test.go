@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"go.uber.org/zap"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -15,7 +16,8 @@ func main() {
 	// Initialize logger
 	zapLog, err := zap.NewDevelopment()
 	if err != nil {
-		fmt.Printf("Failed to create logger: %v\n", err)
+		errorMsg := fmt.Sprintf("Failed to create logger: %v", err)
+		fmt.Printf("%s\n", errorMsg)
 		os.Exit(1)
 	}
 	ctrl.SetLogger(zapr.NewLogger(zapLog))
@@ -23,7 +25,8 @@ func main() {
 	// Get kube client
 	kubeClient, k8sClientset, err := getKubeClient()
 	if err != nil {
-		fmt.Printf("Error getting kube client: %v\n", err)
+		errorMsg := fmt.Sprintf("Error getting kube client: %v", err)
+		fmt.Printf("%s\n", errorMsg)
 		os.Exit(1)
 	}
 
@@ -31,17 +34,23 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 
+	d := diag.Diagnostics{}
+
 	// Run migration test
 	success, err := RunMigrationTestBeforeUpgrade(ctx, kubeClient, k8sClientset)
 	if err != nil {
-		fmt.Printf("Migration test failed: %v\n", err)
+		d.AddError("Migration test failed", err.Error())
+		errorMsg := fmt.Sprintf("Migration test failed: %v", err)
+		fmt.Printf("%s\n", errorMsg)
 		os.Exit(1)
 	}
-
 	if !success {
-		fmt.Println("Migration test did not complete successfully")
+		d.AddError("Migration test did not complete successfully", "Job did not complete successfully")
+		errorMsg := fmt.Sprintf("Migration test did not complete successfully")
+		fmt.Printf("%s\n", errorMsg)
 		os.Exit(1)
 	}
 
-	fmt.Println("Migration test completed successfully")
+	successMsg := fmt.Sprintf("Migration test completed successfully")
+	fmt.Printf("%s\n", successMsg)
 }
