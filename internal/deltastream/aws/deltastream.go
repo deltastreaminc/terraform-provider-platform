@@ -64,10 +64,10 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 	}
 
 	if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
-		fmt.Println("Running schema migration test...")
+		tflog.Debug(ctx, "Running schema migration test...")
 		err = RunMigrationTestBeforeUpgrade(ctx, kubeClient.Client)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			d.AddError("schema migration test failed", err.Error())
 			return
 		}
 	}
