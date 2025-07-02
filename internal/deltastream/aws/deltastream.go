@@ -32,7 +32,7 @@ var platformTemplate []byte
 
 // RunMigrationTestBeforeUpgrade runs schema migration test before upgrade
 func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client) error {
-	fmt.Println("Schema migration test before upgrade")
+	tflog.Debug(ctx, "Schema migration test before upgrade")
 	return nil
 }
 
