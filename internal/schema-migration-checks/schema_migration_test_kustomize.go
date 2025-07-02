@@ -155,10 +155,8 @@ func createRDSMigrationNamespace(ctx context.Context, kubeClient client.Client, 
 		if !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("failed to create namespace: %v", err)
 		}
-		fmt.Printf("Namespace %s already exists\n", namespace)
 		return nil
 	}
-	fmt.Printf("Namespace %s created\n", namespace)
 	return nil
 }
 
@@ -200,21 +198,15 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 		objName, _ := metadata["name"].(string)
 		namespace, _ := metadata["namespace"].(string)
 
-		fmt.Printf("Found resource: kind=%s, name=%s, namespace=%s\n", kind, objName, namespace)
-
 		// Add timeout context for manifest application - increased to 5 minutes
 		applyCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
-		fmt.Printf("Applying manifest for %s %s in namespace %s\n", kind, objName, namespace)
 		diags := util.ApplyManifests(applyCtx, kubeClient, manifest)
 		if diags.HasError() {
 			for _, diag := range diags {
-				fmt.Printf("Error applying manifest: %s - %s\n", diag.Summary(), diag.Detail())
+				d.AddError(fmt.Sprintf("error applying manifest %s %s in namespace %s", kind, objName, namespace), diag.Detail())
 			}
-			d = append(d, diags...)
-		} else {
-			fmt.Printf("Successfully applied manifest %s %s\n", kind, objName)
 		}
 	}
 
