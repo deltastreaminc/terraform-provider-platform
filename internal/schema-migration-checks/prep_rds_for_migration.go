@@ -23,6 +23,79 @@ import (
 //go:embed assets/schema-migration-test-kustomize.yaml
 var schemaMigrationTestKustomize string
 
+// PrepareRDSForMigration prepares RDS for migration
+func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID string, err error) {
+
+	// Get RDS client
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(region),
+	)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to load SDK config: %v", err)
+	}
+	rdsClient := rds.NewFromConfig(cfg)
+
+	// Create new snapshot
+	snapshotID, err = createRDSSnapshot(ctx, rdsClient, mainRDSDBInstanceIdentifier, ApiServerVersion, infraID)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to create RDS snapshot: %v", err)
+	}
+
+	// Create test RDS instance
+	restoredRDSInstanceID, err = createTestRDSInstance(ctx, rdsClient, snapshotID, ApiServerVersion, mainRDSDBInstanceIdentifier, infraID)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to create test RDS instance: %v", err)
+	}
+
+	// Get KMS key from main instance
+	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
+	})
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to get main instance details for KMS key: %v", err)
+	}
+	if len(mainInstance.DBInstances) == 0 {
+		return "", "", "", "", fmt.Errorf("main instance %s not found", mainRDSDBInstanceIdentifier)
+	}
+	mainDB := mainInstance.DBInstances[0]
+	kmsKeyID := ""
+	if mainDB.KmsKeyId != nil {
+		kmsKeyID = *mainDB.KmsKeyId
+	} else {
+		return "", "", "", "", fmt.Errorf("main RDS instance %s does not have a KMS key", mainRDSDBInstanceIdentifier)
+	}
+
+	// Enable managed password and wait for secret
+	if err = enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID, kmsKeyID); err != nil {
+		return "", "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
+	}
+
+	_, restoredRDSMasterSecretName, err = waitForRDSSecret(ctx, rdsClient, restoredRDSInstanceID)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to wait for RDS secret: %v", err)
+	}
+
+	// Get RDS endpoint
+	instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+	})
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("failed to get instance details: %v", err)
+	}
+	if len(instanceDetails.DBInstances) == 0 {
+		return "", "", "", "", fmt.Errorf("instance %s not found", restoredRDSInstanceID)
+	}
+	endpoint := *instanceDetails.DBInstances[0].Endpoint.Address
+	restoredRDSEndpoint = endpoint
+
+	tflog.Debug(ctx, "Test RDS instance created", map[string]interface{}{
+		"instance_id": restoredRDSInstanceID,
+		"endpoint":    endpoint,
+	})
+
+	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
+}
+
 // Helper functions for generating consistent resource names
 func generateSnapshotID(infraID, apiServerVersion string) string {
 	return fmt.Sprintf("schema-migration-test-ds-%s-%s", infraID, strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
@@ -32,8 +105,108 @@ func generateRDSInstanceID(infraID, apiServerVersion string) string {
 	return fmt.Sprintf("schema-migration-test-ds-%s-%s", infraID, strings.ReplaceAll(strings.ReplaceAll(apiServerVersion, ".", "-"), "-", ""))
 }
 
-// GetDeploymentConfig gets configuration from AWS Secrets Manager
-func GetDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourceID string) (map[string]interface{}, error) {
+func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string, kmsKeyID string) error {
+	modifyInput := &rds.ModifyDBInstanceInput{
+		DBInstanceIdentifier:     aws.String(restoredRDSInstanceID),
+		ManageMasterUserPassword: aws.Bool(true),
+		MasterUserSecretKmsKeyId: aws.String(kmsKeyID),
+		ApplyImmediately:         aws.Bool(true),
+	}
+	_, err := rdsClient.ModifyDBInstance(ctx, modifyInput)
+	if err != nil {
+		return fmt.Errorf("failed to enable managed password for instance %s: %v", restoredRDSInstanceID, err)
+	}
+	return nil
+}
+
+// waitForRDSSecret waits for the RDS managed password secret to be created and returns the secret ARN and secret name
+// Returns:
+//   - secretArn: full AWS ARN (e.g., "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-secret-name-ABC123") for AWS API access
+//   - secretName: secret name only (e.g., "my-secret-name") for use in Kubernetes manifests like ExternalSecret
+//   - err: error if secret creation fails or times out
+//
+// Note: Both secretArn and secretName are needed because:
+//   - secretArn is used for AWS API calls to access the secret
+//   - secretName is used in Kubernetes manifests (ExternalSecret references only the secret name, not the full ARN)
+func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string) (secretArn, secretName string, err error) {
+
+	var foundSecretArn string
+	for i := 0; i < 30; i++ {
+		instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+		})
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get instance details: %v", err)
+		}
+		if len(instanceDetails.DBInstances) > 0 {
+			instance := instanceDetails.DBInstances[0]
+			if instance.MasterUserSecret != nil {
+				foundSecretArn = *instance.MasterUserSecret.SecretArn
+
+				break
+			}
+		}
+		time.Sleep(10 * time.Second)
+	}
+	if foundSecretArn == "" {
+		return "", "", fmt.Errorf("failed to get RDS secret ARN after 5 minutes for instance %s", restoredRDSInstanceID)
+	}
+
+	parts := strings.Split(foundSecretArn, ":")
+	restoredRDSMasterSecretName := parts[len(parts)-1]
+	if idx := strings.LastIndex(restoredRDSMasterSecretName, "-"); idx != -1 {
+		restoredRDSMasterSecretName = restoredRDSMasterSecretName[:idx]
+	}
+
+	secretArn = foundSecretArn
+	secretName = restoredRDSMasterSecretName
+
+	tflog.Debug(ctx, "waitForRDSSecret finished", map[string]interface{}{
+		"secret_arn":  secretArn,
+		"secret_name": secretName,
+	})
+
+	return
+}
+
+func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVarsForSchemaMigrationTest map[string]string) error {
+	// Split the template into individual manifests
+	manifests := strings.Split(schemaMigrationTestKustomize, "---")
+
+	// Apply each manifest separately
+	for i, manifest := range manifests {
+		if strings.TrimSpace(manifest) == "" {
+			continue
+		}
+		retryableClient := &util.RetryableClient{Client: kubeClient}
+		diags := RenderAndApplyMigrationTemplate(ctx, retryableClient, fmt.Sprintf("schema-migration-test-%d", i), []byte(manifest), templateVarsForSchemaMigrationTest)
+		if diags.HasError() {
+			// Collect all error messages
+			var errorMsgs []string
+			for _, diag := range diags {
+				errorMsgs = append(errorMsgs, fmt.Sprintf("%s: %s", diag.Summary(), diag.Detail()))
+			}
+			return fmt.Errorf("error rendering and applying template: %s", strings.Join(errorMsgs, "; "))
+		}
+
+		// If this is the OCIRepository manifest (first one), wait for it to be ready
+		if i == 0 {
+			time.Sleep(10 * time.Second) // Give it some time to start
+		}
+	}
+
+	// Wait for kustomization and check logs
+	_, err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
+	if err != nil {
+		tflog.Debug(ctx, "failed waiting for kustomization", map[string]interface{}{"error": err.Error()})
+		return err
+	}
+
+	return nil
+}
+
+// getDeploymentConfig gets configuration from AWS Secrets Manager
+func getDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourceID string) (map[string]interface{}, error) {
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(region),
 	)
@@ -63,8 +236,8 @@ func GetDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourc
 	return deploymentConfig, nil
 }
 
-// CreateRDSSnapshot creates a snapshot of the RDS instance
-func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInstanceIdentifier string, apiServerVersion string, infraID string) (string, error) {
+// createRDSSnapshot creates a snapshot of the RDS instance and returns the newly created snapshot ID
+func createRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInstanceIdentifier string, apiServerVersion string, infraID string) (string, error) {
 	var err error
 	snapshotID := generateSnapshotID(infraID, apiServerVersion)
 
@@ -102,8 +275,8 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInst
 	return snapshotID, nil
 }
 
-// CreateTestRDSInstance creates a new RDS instance from snapshot for testing
-func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotID string, apiServerVersion string, mainRDSDBInstanceIdentifier string, infraID string) (string, error) {
+// createTestRDSInstance creates a new RDS instance from snapshot for testing and returns the newly created test RDS instance ID
+func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotID string, apiServerVersion string, mainRDSDBInstanceIdentifier string, infraID string) (string, error) {
 	restoredRDSInstanceID := generateRDSInstanceID(infraID, apiServerVersion)
 
 	// Create tags that explicitly mark this as a test instance
@@ -167,158 +340,44 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	return restoredRDSInstanceID, nil
 }
 
-func enableManagedPassword(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string, kmsKeyID string) error {
-	modifyInput := &rds.ModifyDBInstanceInput{
-		DBInstanceIdentifier:     aws.String(restoredRDSInstanceID),
-		ManageMasterUserPassword: aws.Bool(true),
-		MasterUserSecretKmsKeyId: aws.String(kmsKeyID),
-		ApplyImmediately:         aws.Bool(true),
-	}
-	_, err := rdsClient.ModifyDBInstance(ctx, modifyInput)
-	if err != nil {
-		return fmt.Errorf("failed to enable managed password for instance %s: %v", restoredRDSInstanceID, err)
-	}
-	return nil
-}
-
-func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSInstanceID string) (string, string, error) {
-
-	var secretArn string
-	for i := 0; i < 30; i++ {
-		instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-		})
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get instance details: %v", err)
-		}
-		if len(instanceDetails.DBInstances) > 0 {
-			instance := instanceDetails.DBInstances[0]
-			if instance.MasterUserSecret != nil {
-				secretArn = *instance.MasterUserSecret.SecretArn
-
-				break
-			}
-		}
-		time.Sleep(10 * time.Second)
-	}
-	if secretArn == "" {
-		return "", "", fmt.Errorf("failed to get RDS secret ARN after 5 minutes for instance %s", restoredRDSInstanceID)
-	}
-
-	parts := strings.Split(secretArn, ":")
-	restoredRDSMasterSecretName := parts[len(parts)-1]
-	if idx := strings.LastIndex(restoredRDSMasterSecretName, "-"); idx != -1 {
-		restoredRDSMasterSecretName = restoredRDSMasterSecretName[:idx]
-	}
-
-	return secretArn, restoredRDSMasterSecretName, nil
-}
-
-// PrepareRDSForMigration prepares RDS for migration
-func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID string, err error) {
+// cleanupSchemaRestoredRDSInstanceandSnapshot cleans up the test RDS instance and snapshot created for schema migration testing
+func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationTest map[string]string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(region),
-	)
+	cfg, err := config.LoadDefaultConfig(cleanupCtx, config.WithRegion(templateVarsForSchemaMigrationTest["Region"]))
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to load SDK config: %v", err)
+		return err
 	}
 	rdsClient := rds.NewFromConfig(cfg)
 
-	// Create new snapshot
-	snapshotID, err = CreateRDSSnapshot(ctx, rdsClient, mainRDSDBInstanceIdentifier, ApiServerVersion, infraID)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to create RDS snapshot: %v", err)
-	}
-
-	// Create test RDS instance
-	restoredRDSInstanceID, err = CreateTestRDSInstance(ctx, rdsClient, snapshotID, ApiServerVersion, mainRDSDBInstanceIdentifier, infraID)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to create test RDS instance: %v", err)
-	}
-
-	// Get KMS key from main instance
-	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
-	})
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to get main instance details for KMS key: %v", err)
-	}
-	if len(mainInstance.DBInstances) == 0 {
-		return "", "", "", "", fmt.Errorf("main instance %s not found", mainRDSDBInstanceIdentifier)
-	}
-	mainDB := mainInstance.DBInstances[0]
-	kmsKeyID := ""
-	if mainDB.KmsKeyId != nil {
-		kmsKeyID = *mainDB.KmsKeyId
-	} else {
-		return "", "", "", "", fmt.Errorf("main RDS instance %s does not have a KMS key", mainRDSDBInstanceIdentifier)
-	}
-
-	// Enable managed password and wait for secret
-	if err = enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID, kmsKeyID); err != nil {
-		return "", "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
-	}
-
-	_, restoredRDSMasterSecretName, err = waitForRDSSecret(ctx, rdsClient, restoredRDSInstanceID)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to wait for RDS secret: %v", err)
-	}
-
-	// Get RDS endpoint
-	instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-	})
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to get instance details: %v", err)
-	}
-	if len(instanceDetails.DBInstances) == 0 {
-		return "", "", "", "", fmt.Errorf("instance %s not found", restoredRDSInstanceID)
-	}
-	endpoint := *instanceDetails.DBInstances[0].Endpoint.Address
-	restoredRDSEndpoint = endpoint
-
-	tflog.Debug(ctx, "Test RDS instance created", map[string]interface{}{
-		"instance_id": restoredRDSInstanceID,
-		"endpoint":    endpoint,
-	})
-
-	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
-}
-
-func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, templateVarsForSchemaMigrationTest map[string]string) error {
-	// Split the template into individual manifests
-	manifests := strings.Split(schemaMigrationTestKustomize, "---")
-
-	// Apply each manifest separately
-	for i, manifest := range manifests {
-		if strings.TrimSpace(manifest) == "" {
-			continue
-		}
-		retryableClient := &util.RetryableClient{Client: kubeClient}
-		diags := RenderAndApplyMigrationTemplate(ctx, retryableClient, fmt.Sprintf("schema-migration-test-%d", i), []byte(manifest), templateVarsForSchemaMigrationTest)
-		if diags.HasError() {
-			// Collect all error messages
-			var errorMsgs []string
-			for _, diag := range diags {
-				errorMsgs = append(errorMsgs, fmt.Sprintf("%s: %s", diag.Summary(), diag.Detail()))
-			}
-			return fmt.Errorf("error rendering and applying template: %s", strings.Join(errorMsgs, "; "))
-		}
-
-		// If this is the OCIRepository manifest (first one), wait for it to be ready
-		if i == 0 {
-			time.Sleep(10 * time.Second) // Give it some time to start
+	// Delete RDS instance
+	if templateVarsForSchemaMigrationTest["test_rds_instance_id"] != "" {
+		_, err := rdsClient.DeleteDBInstance(cleanupCtx, &rds.DeleteDBInstanceInput{
+			DBInstanceIdentifier: aws.String(templateVarsForSchemaMigrationTest["test_rds_instance_id"]),
+			SkipFinalSnapshot:    aws.Bool(true),
+		})
+		if err != nil {
+			return err
 		}
 	}
 
-	// Wait for kustomization and check logs
-	_, err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
+	// Delete snapshot
+	snapshotID := templateVarsForSchemaMigrationTest["snapshot_id"]
+	if snapshotID == "" {
+		snapshotID = generateSnapshotID(templateVarsForSchemaMigrationTest["infraID"], templateVarsForSchemaMigrationTest["ApiServerNewVersion"])
+	}
+	_, err = rdsClient.DeleteDBSnapshot(cleanupCtx, &rds.DeleteDBSnapshotInput{
+		DBSnapshotIdentifier: aws.String(snapshotID),
+	})
 	if err != nil {
-		tflog.Debug(ctx, "failed waiting for kustomization", map[string]interface{}{"error": err.Error()})
 		return err
 	}
 
+	tflog.Debug(cleanupCtx, "Successfully cleaned up schema migration test RDS instance and snapshot", map[string]interface{}{
+		"rds_instance_id": templateVarsForSchemaMigrationTest["test_rds_instance_id"],
+		"snapshot_id":     snapshotID,
+	})
 	return nil
 }

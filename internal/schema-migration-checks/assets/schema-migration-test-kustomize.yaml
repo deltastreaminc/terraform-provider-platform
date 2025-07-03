@@ -8,7 +8,7 @@ spec:
   url: oci://{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/oci/api-server
   provider: aws
   ref:
-    tag: 0.0.33-schema-migration-test
+    tag: {{ .ApiServerNewVersion }}
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

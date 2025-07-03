@@ -26,34 +26,9 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	timeoutCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
 
-	// Check and cleanup Schema Version Check kustomization
-	schemaVersionCheckKustomization := &kustomizev1.Kustomization{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "schema-version-check",
-			Namespace: "cluster-config",
-		},
-	}
-	if err := kubeClient.Get(timeoutCtx, client.ObjectKeyFromObject(schemaVersionCheckKustomization), schemaVersionCheckKustomization); err == nil {
-		tflog.Debug(ctx, "Found schema-version-check kustomization, cleaning up and returning")
-		if err := cleanupVersionCheckKustomization(kubeClient); err != nil {
-			return false, fmt.Errorf("failed to cleanup version check kustomization")
-		}
-		return true, nil
-	}
-
-	// Check and cleanup Schema Migration Test kustomization
-	schemaMigrationTestKustomization := &kustomizev1.Kustomization{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "schema-migration-test",
-			Namespace: "schema-test-migrate",
-		},
-	}
-	if err := kubeClient.Get(timeoutCtx, client.ObjectKeyFromObject(schemaMigrationTestKustomization), schemaMigrationTestKustomization); err == nil {
-		tflog.Debug(ctx, "Found schema-migration-test kustomization, cleaning up and returning")
-		if err := cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient); err != nil {
-			return false, fmt.Errorf("failed to cleanup schema migration test namespace")
-		}
-		return true, nil
+	// Check and cleanup any prior schema test kustomizations
+	if shouldReturn, err := cleanupPriorSchemaTestKustomizations(timeoutCtx, kubeClient); shouldReturn {
+		return true, err
 	}
 
 	tflog.Debug(ctx, "Checking for cluster-config namespace and cluster-settings secret")
@@ -74,7 +49,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 		return false, fmt.Errorf("failed to get latest API server version: %v", err)
 	}
 
-	tflog.Debug(ctx, "Retrieved API server version", map[string]interface{}{"version": apiServerVersion})
+	tflog.Debug(ctx, "Retrieved new API server version for schema test", map[string]interface{}{"version": apiServerVersion})
 
 	restoredRDSInstanceID := generateRDSInstanceID(string(secret.Data["infraID"]), apiServerVersion)
 	snapshotID := generateSnapshotID(string(secret.Data["infraID"]), apiServerVersion)
@@ -138,7 +113,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	tflog.Debug(ctx, "Found api-server pods, proceeding with migration check")
 
 	// Get deployment config
-	deploymentConfig, err := GetDeploymentConfig(timeoutCtx, string(secret.Data["stack"]), string(secret.Data["infraID"]), string(secret.Data["region"]), string(secret.Data["resourceID"]))
+	deploymentConfig, err := getDeploymentConfig(timeoutCtx, string(secret.Data["stack"]), string(secret.Data["infraID"]), string(secret.Data["region"]), string(secret.Data["resourceID"]))
 	if err != nil {
 		return false, fmt.Errorf("failed to get deployment config: %v", err)
 	}
@@ -243,71 +218,6 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	return jobCompleted, nil
 }
 
-func cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient client.Client) (err error) {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	// Delete kustomization first
-	kustomization := &kustomizev1.Kustomization{}
-	kustomizationKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "schema-test-migrate"}
-	if err = kubeClient.Get(cleanupCtx, kustomizationKey, kustomization); err == nil {
-		if err := kubeClient.Delete(cleanupCtx, kustomization); err != nil {
-			return err
-		}
-	}
-
-	// Then delete namespace
-	ns := &corev1.Namespace{}
-	nsKey := client.ObjectKey{Name: "schema-test-migrate"}
-	if err := kubeClient.Get(cleanupCtx, nsKey, ns); err == nil {
-		if err := kubeClient.Delete(cleanupCtx, ns); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationTest map[string]string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(cleanupCtx, config.WithRegion(templateVarsForSchemaMigrationTest["Region"]))
-	if err != nil {
-		return err
-	}
-	rdsClient := rds.NewFromConfig(cfg)
-
-	// Delete RDS instance
-	if templateVarsForSchemaMigrationTest["test_rds_instance_id"] != "" {
-		_, err := rdsClient.DeleteDBInstance(cleanupCtx, &rds.DeleteDBInstanceInput{
-			DBInstanceIdentifier: aws.String(templateVarsForSchemaMigrationTest["test_rds_instance_id"]),
-			SkipFinalSnapshot:    aws.Bool(true),
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Delete snapshot
-	snapshotID := templateVarsForSchemaMigrationTest["snapshot_id"]
-	if snapshotID == "" {
-		snapshotID = generateSnapshotID(templateVarsForSchemaMigrationTest["infraID"], templateVarsForSchemaMigrationTest["ApiServerNewVersion"])
-	}
-	_, err = rdsClient.DeleteDBSnapshot(cleanupCtx, &rds.DeleteDBSnapshotInput{
-		DBSnapshotIdentifier: aws.String(snapshotID),
-	})
-	if err != nil {
-		return err
-	}
-
-	tflog.Debug(cleanupCtx, "Successfully cleaned up schema migration test RDS instance and snapshot", map[string]interface{}{
-		"rds_instance_id": templateVarsForSchemaMigrationTest["test_rds_instance_id"],
-		"snapshot_id":     snapshotID,
-	})
-	return nil
-}
-
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
 func getLatestAPIServerVersion(ctx context.Context, stack, productVersion string) (string, error) {
 	bucketName := "prod-ds-packages-maven"
@@ -364,4 +274,39 @@ func getLatestAPIServerVersion(ctx context.Context, stack, productVersion string
 	}
 
 	return "", fmt.Errorf("api-server image not found in image list")
+}
+
+// cleanupPriorSchemaTestKustomizations checks for and cleans up any existing schema test kustomizations
+func cleanupPriorSchemaTestKustomizations(ctx context.Context, kubeClient client.Client) (bool, error) {
+	// Check and cleanup Schema Version Check kustomization
+	schemaVersionCheckKustomization := &kustomizev1.Kustomization{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "schema-version-check",
+			Namespace: "cluster-config",
+		},
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(schemaVersionCheckKustomization), schemaVersionCheckKustomization); err == nil {
+		tflog.Debug(ctx, "Found schema-version-check kustomization, cleaning up and returning")
+		if err := cleanupVersionCheckKustomization(kubeClient); err != nil {
+			return true, fmt.Errorf("failed to cleanup version check kustomization")
+		}
+		return true, nil
+	}
+
+	// Check and cleanup Schema Migration Test kustomization
+	schemaMigrationTestKustomization := &kustomizev1.Kustomization{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "schema-migration-test",
+			Namespace: "schema-test-migrate",
+		},
+	}
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(schemaMigrationTestKustomization), schemaMigrationTestKustomization); err == nil {
+		tflog.Debug(ctx, "Found schema-migration-test kustomization, cleaning up and returning")
+		if err := cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient); err != nil {
+			return true, fmt.Errorf("failed to cleanup schema migration test namespace")
+		}
+		return true, nil
+	}
+
+	return false, nil
 }

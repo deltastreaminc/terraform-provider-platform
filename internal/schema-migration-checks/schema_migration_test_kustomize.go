@@ -10,55 +10,17 @@ import (
 
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	yaml "gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // This Module is used to run schema migration test using kustomize
-
-// getKubeClient creates and returns a controller-runtime client and a client-go clientset
-func getKubeClient() (client.Client, *kubernetes.Clientset, error) {
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	configOverrides := &clientcmd.ConfigOverrides{}
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	config, err := kubeConfig.ClientConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get kube config: %v", err)
-	}
-
-	scheme := runtime.NewScheme()
-	if err = clientgoscheme.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add client-go scheme: %v", err)
-	}
-	if err = kustomizev1.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add kustomize scheme: %v", err)
-	}
-	if err = sourcev1.AddToScheme(scheme); err != nil {
-		return nil, nil, fmt.Errorf("failed to add source scheme: %v", err)
-	}
-
-	kubeClient, err := client.New(config, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create kube client: %v", err)
-	}
-
-	k8sClientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create k8s clientset: %v", err)
-	}
-
-	return kubeClient, k8sClientset, nil
-}
 
 // waitForRDSMigrationKustomizationAndCheckLogs waits for a kustomization to complete and checks its logs
 func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, namespace, kustomizationName, jobName string) (bool, error) {
@@ -213,4 +175,28 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 	}
 
 	return d
+}
+
+func cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient client.Client) (err error) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Delete kustomization first
+	kustomization := &kustomizev1.Kustomization{}
+	kustomizationKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "schema-test-migrate"}
+	if err = kubeClient.Get(cleanupCtx, kustomizationKey, kustomization); err == nil {
+		if err := kubeClient.Delete(cleanupCtx, kustomization); err != nil {
+			return err
+		}
+	}
+
+	// Then delete namespace
+	ns := &corev1.Namespace{}
+	nsKey := client.ObjectKey{Name: "schema-test-migrate"}
+	if err := kubeClient.Get(cleanupCtx, nsKey, ns); err == nil {
+		if err := kubeClient.Delete(cleanupCtx, ns); err != nil {
+			return err
+		}
+	}
+	return nil
 }

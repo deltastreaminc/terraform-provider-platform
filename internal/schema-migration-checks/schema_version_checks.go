@@ -103,7 +103,16 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (bool, error) {
 	// Start looking for pods immediately without waiting for kustomization
 	pods := &corev1.PodList{}
+	maxAttempts := 360 // Retry for up to 30 minutes (360 * 5 seconds)
+	attempt := 0
 	for {
+		if ctx.Err() != nil {
+			return false, fmt.Errorf("context canceled or timed out while waiting for job pods")
+		}
+		if attempt >= maxAttempts {
+			return false, fmt.Errorf("exceeded maximum attempts while waiting for job pods")
+		}
+
 		if err := kubeClient.List(ctx, pods, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err != nil {
 			return false, fmt.Errorf("failed to get job pods: %v", err)
 		}
@@ -111,6 +120,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 			break
 		}
 		time.Sleep(5 * time.Second)
+		attempt++
 	}
 
 	pod := pods.Items[0]
@@ -118,8 +128,17 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	var logs []byte
 	var err error
 	versionCheckCompleted := false
+	versionCheckAttempts := 0
+	maxVersionCheckAttempts := 360 // Retry for up to 30 minutes (360 * 5 seconds)
 
 	for !versionCheckCompleted {
+		if ctx.Err() != nil {
+			return false, fmt.Errorf("context canceled or timed out while waiting for version check completion")
+		}
+		if versionCheckAttempts >= maxVersionCheckAttempts {
+			return false, fmt.Errorf("exceeded maximum attempts while waiting for version check completion")
+		}
+
 		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
 			return false, fmt.Errorf("failed to get pod status: %v", err)
 		}
@@ -144,6 +163,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 		}
 		if !versionCheckCompleted {
 			time.Sleep(5 * time.Second)
+			versionCheckAttempts++
 		}
 	}
 

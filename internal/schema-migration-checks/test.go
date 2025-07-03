@@ -3,16 +3,56 @@ package schemamigration
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
+	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/go-logr/zapr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// getKubeClient creates and returns a controller-runtime client and a client-go clientset
+func getKubeClient() (client.Client, *kubernetes.Clientset, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+	config, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get kube config: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err = clientgoscheme.AddToScheme(scheme); err != nil {
+		return nil, nil, fmt.Errorf("failed to add client-go scheme: %v", err)
+	}
+	if err = kustomizev1.AddToScheme(scheme); err != nil {
+		return nil, nil, fmt.Errorf("failed to add kustomize scheme: %v", err)
+	}
+	if err = sourcev1.AddToScheme(scheme); err != nil {
+		return nil, nil, fmt.Errorf("failed to add source scheme: %v", err)
+	}
+
+	kubeClient, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create kube client: %v", err)
+	}
+
+	k8sClientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create k8s clientset: %v", err)
+	}
+
+	return kubeClient, k8sClientset, nil
+}
 
 func TestSchemaMigration(t *testing.T) {
 	// Create context
@@ -22,24 +62,24 @@ func TestSchemaMigration(t *testing.T) {
 	zapLog, err := zap.NewDevelopment()
 	if err != nil {
 		tflog.Error(ctx, "Failed to create logger", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
+		t.Fatal("Failed to create logger: ", err)
 	}
 	ctrl.SetLogger(zapr.NewLogger(zapLog))
 
 	// Set log level to debug to see debug messages
 	tflog.SetField(ctx, "level", "DEBUG")
 
-	fmt.Println("Starting schema migration test...")
+	t.Log("Starting schema migration test...")
 
 	// Get kube client
-	fmt.Println("Getting kube client...")
+	t.Log("Getting kube client...")
 	kubeClient, k8sClientset, err := getKubeClient()
 	if err != nil {
-		fmt.Printf("Error getting kube client: %v\n", err)
+		t.Logf("Error getting kube client: %v", err)
 		tflog.Error(ctx, "Error getting kube client", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
+		t.Fatal("Error getting kube client: ", err)
 	}
-	fmt.Println("Successfully got kube client")
+	t.Log("Successfully got kube client")
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
@@ -48,32 +88,31 @@ func TestSchemaMigration(t *testing.T) {
 	d := diag.Diagnostics{}
 
 	// Run migration test
-	fmt.Println("Running schema migration test...")
+	t.Log("Running schema migration test...")
 	tflog.Debug(ctx, "Running schema migration test...")
 	success, err := RunMigrationTestBeforeUpgrade(ctx, kubeClient, k8sClientset)
 	if err != nil {
-		fmt.Printf("Migration test error: %v\n", err)
+		t.Logf("Migration test error: %v", err)
 		d.AddError("schema migration test failed", err.Error())
 	}
 	if !success {
-		fmt.Println("Migration test did not complete successfully")
+		t.Log("Migration test did not complete successfully")
 		d.AddError("Migration test did not complete successfully", "Job did not complete successfully")
 	}
 
 	// Check for errors using diagnostics
 	if d.HasError() {
 		for _, diag := range d {
-			fmt.Printf("Error: %s - %s\n", diag.Summary(), diag.Detail())
+			t.Logf("Error: %s - %s", diag.Summary(), diag.Detail())
 			tflog.Error(ctx, "Migration test error", map[string]interface{}{
 				"summary": diag.Summary(),
 				"detail":  diag.Detail(),
 			})
 		}
-		os.Exit(1)
+		t.FailNow()
 	}
 
 	// Success - exit with 0
-	fmt.Println("Schema migration test completed successfully - deployment can proceed")
+	t.Log("Schema migration test completed successfully - deployment can proceed")
 	tflog.Debug(ctx, "Schema migration test completed successfully - deployment can proceed")
-	os.Exit(0)
 }

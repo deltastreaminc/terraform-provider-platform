@@ -261,7 +261,7 @@ func ApplyManifests(ctx context.Context, kubeClient *RetryableClient, manifestYa
 
 			u.SetResourceVersion(ug.GetResourceVersion())
 			if err := kubeClient.Update(ctx, u); err != nil {
-				errorLog := fmt.Sprintf("Error updating: %v", err)
+				errorLog := fmt.Sprintf("Error updating %s %s: %v", u.GetKind(), u.GetName(), err)
 				tflog.Debug(ctx, errorLog)
 				return retry.RetryableError(err)
 			}
