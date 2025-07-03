@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
@@ -48,10 +47,13 @@ func main() {
 		d.AddError("Migration test did not complete successfully", "Job did not complete successfully")
 	}
 
-	// Print any errors
+	// Check for errors using diagnostics
 	if d.HasError() {
 		for _, diag := range d {
-			fmt.Printf("Error: %s - %s\n", diag.Summary(), diag.Detail())
+			tflog.Error(ctx, "Migration test error", map[string]interface{}{
+				"summary": diag.Summary(),
+				"detail":  diag.Detail(),
+			})
 		}
 		os.Exit(1)
 	}
