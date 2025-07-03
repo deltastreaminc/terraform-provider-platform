@@ -24,6 +24,7 @@ require (
 	github.com/fluxcd/kustomize-controller/api v1.2.2
 	github.com/fluxcd/notification-controller/api v1.2.4
 	github.com/fluxcd/source-controller/api v1.3.0
+	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/terraform-plugin-docs v0.19.3
 	github.com/hashicorp/terraform-plugin-framework v1.14.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.12.0
@@ -31,6 +32,7 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/sethvargo/go-retry v0.2.4
+	go.uber.org/zap v1.27.0
 	helm.sh/helm/v3 v3.17.1
 	k8s.io/api v0.32.2
 	k8s.io/apiextensions-apiserver v0.32.1

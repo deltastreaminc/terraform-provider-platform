@@ -133,6 +133,8 @@ type ClusterConfiguration struct {
 	RdsMViewsUsingAurora      basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
 	MaterializedViewStoreType basetypes.StringValue `tfsdk:"materialized_view_store_type"`
 
+	EnableSchemaMigrationTest basetypes.BoolValue `tfsdk:"enable_schema_migration_test"`
+
 	Cw2LokiSqsUrl basetypes.StringValue `tfsdk:"cw2loki_sqs_url"`
 
 	ConsoleHostname                     basetypes.StringValue `tfsdk:"console_hostname"`
@@ -542,6 +544,11 @@ var Schema = schema.Schema{
 
 				"rds_control_plane_resource_id": schema.StringAttribute{
 					Description: "The resource ID of the RDS controlplane instance for storing DeltaStream data.",
+					Required:    true,
+				},
+
+				"enable_schema_migration_test": schema.BoolAttribute{
+					Description: "Flag to enable schema migration test before deploying new version.",
 					Required:    true,
 				},
 

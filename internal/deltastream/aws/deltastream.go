@@ -22,6 +22,7 @@ import (
 
 	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
+	schemamigration "github.com/deltastreaminc/terraform-provider-platform/internal/schema-migration-checks"
 )
 
 //go:embed assets/flux-system/flux.yaml.tmpl
@@ -43,6 +44,12 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 		return
 	}
 
+	kubeClientSets, err := util.GetKubeClientSets(ctx, cfg, dp)
+	if err != nil {
+		d.AddError("error getting kube client", err.Error())
+		return
+	}
+
 	d.Append(UpdateDeploymentConfig(ctx, cfg, dp)...)
 	if d.HasError() {
 		return
@@ -55,6 +62,19 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 	})...)
 	if d.HasError() {
 		return
+	}
+
+	if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
+		tflog.Debug(ctx, "Running schema migration test...")
+		migrationTestSuccessfulContinueToDeploy, err := schemamigration.RunMigrationTestBeforeUpgrade(ctx, kubeClient.Client, kubeClientSets)
+		if err != nil {
+			d.AddError("schema migration test failed due to internal error", err.Error())
+			return
+		}
+		if !migrationTestSuccessfulContinueToDeploy {
+			d.AddError("schema migration test failed", "schema migration failed")
+			return
+		}
 	}
 
 	d.Append(util.RenderAndApplyTemplate(ctx, kubeClient, "platform", platformTemplate, map[string]string{
