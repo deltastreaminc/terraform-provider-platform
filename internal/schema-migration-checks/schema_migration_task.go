@@ -23,7 +23,7 @@ import (
 func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
 
 	// Create context with timeout
-	timeoutCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 25*time.Minute)
 	defer cancel()
 
 	// Check and cleanup any prior schema test kustomizations

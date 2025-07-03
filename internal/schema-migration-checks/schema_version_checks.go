@@ -103,7 +103,7 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (bool, error) {
 	// Start looking for pods immediately without waiting for kustomization
 	pods := &corev1.PodList{}
-	maxAttempts := 360 // Retry for up to 30 minutes (360 * 5 seconds)
+	maxAttempts := 72 // Retry for up to 6 minutes (72 * 5 seconds)
 	attempt := 0
 	for {
 		if ctx.Err() != nil {
@@ -129,7 +129,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	var err error
 	versionCheckCompleted := false
 	versionCheckAttempts := 0
-	maxVersionCheckAttempts := 360 // Retry for up to 30 minutes (360 * 5 seconds)
+	maxVersionCheckAttempts := 120 // Retry for up to 10 minutes (120 * 5 seconds)
 
 	for !versionCheckCompleted {
 		if ctx.Err() != nil {

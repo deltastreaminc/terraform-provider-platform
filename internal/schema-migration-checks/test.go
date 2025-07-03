@@ -82,7 +82,7 @@ func TestSchemaMigration(t *testing.T) {
 	t.Log("Successfully got kube client")
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Minute)
 	defer cancel()
 
 	d := diag.Diagnostics{}

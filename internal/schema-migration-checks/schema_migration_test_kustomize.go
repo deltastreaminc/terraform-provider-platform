@@ -115,7 +115,7 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 		}
 	}
 
-	maxWaitAttempts := 60 // 10 minutes total
+	maxWaitAttempts := 30 // 5 minutes total (30 * 10 seconds)
 	for attempt := 0; attempt < maxWaitAttempts; attempt++ {
 		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
 			time.Sleep(10 * time.Second)
