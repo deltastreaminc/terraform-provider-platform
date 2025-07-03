@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -136,8 +137,11 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}
 
 	if !schemaMigrationRequired {
+		log.Printf("Schema migration not required - versions are compatible")
 		return true, nil
 	}
+
+	log.Printf("Schema migration required - starting migration test")
 
 	mainRDSDatabaseName := ""
 	mainRDSDBInstanceIdentifier := ""

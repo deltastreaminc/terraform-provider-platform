@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"time"
 
@@ -23,6 +24,9 @@ func main() {
 		os.Exit(1)
 	}
 	ctrl.SetLogger(zapr.NewLogger(zapLog))
+
+	// Set log level to debug to see debug messages
+	tflog.SetField(ctx, "level", "DEBUG")
 
 	// Get kube client
 	kubeClient, k8sClientset, err := getKubeClient()
@@ -59,6 +63,6 @@ func main() {
 	}
 
 	// Success - exit with 0
-	tflog.Debug(ctx, "Schema migration test completed successfully - deployment can proceed")
+	log.Printf("Schema migration test completed successfully - deployment can proceed")
 	os.Exit(0)
 }
