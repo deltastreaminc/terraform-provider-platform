@@ -1,4 +1,4 @@
-package main
+package schemamigration
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,22 +50,12 @@ func IsSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClie
 
 	// Use Defer pattern to cleanup resources
 	defer func() {
-		// Start cleanup in background with wait
-		cleanupDone := make(chan struct{})
+		// Start cleanup in background
 		go func() {
 			if err := cleanupVersionCheckKustomization(kubeClient); err != nil {
-				// error cleanup, but continue
+				tflog.Debug(ctx, "Failed to cleanup version check kustomization", map[string]interface{}{"error": err.Error()})
 			}
-			close(cleanupDone)
 		}()
-
-		// Wait for cleanup with timeout
-		select {
-		case <-cleanupDone:
-			// cleanup completed
-		case <-time.After(5 * time.Minute):
-			// cleanup timeout - continuing anyway
-		}
 	}()
 
 	if !schemaMigrationRequired {
@@ -183,7 +174,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 
 	// Print only the version JSON
 	versionJSONMsg := fmt.Sprintf("Found version JSON:\n%s", versionJSON)
-	_ = versionJSONMsg
+	tflog.Debug(ctx, versionJSONMsg)
 
 	var status SchemaStatus
 	if err := json.Unmarshal([]byte(versionJSON), &status); err != nil {
@@ -192,12 +183,12 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 
 	// Print parsed versions using fmt.Sprintf
 	versionsMsg := fmt.Sprintf("Parsed versions: currentVersion=%q, newVersion=%q", status.CurrentVersion, status.NewVersion)
-	_ = versionsMsg
+	tflog.Debug(ctx, versionsMsg)
 
 	// Compare versions
 	if status.CurrentVersion == status.NewVersion {
 		sameVersionMsg := fmt.Sprintf("Versions are the same (%s), no need to run schema migration", status.CurrentVersion)
-		_ = sameVersionMsg
+		tflog.Debug(ctx, sameVersionMsg)
 		return false, nil
 	}
 	if status.CurrentVersion > status.NewVersion {
@@ -205,7 +196,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	}
 
 	startMigrationMsg := fmt.Sprintf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
-	_ = startMigrationMsg
+	tflog.Debug(ctx, startMigrationMsg)
 
 	return true, nil
 }
@@ -214,7 +205,6 @@ func cleanupVersionCheckKustomization(kubeClient client.Client) error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
 	defer cancel()
 
-	// Sometimes Kustomization is stuck in deleting state, so we need to force delete it
 	// Delete Jobs and Pods first
 	jobList := &batchv1.JobList{}
 	if err := kubeClient.List(cleanupCtx, jobList, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err == nil {
@@ -236,7 +226,6 @@ func cleanupVersionCheckKustomization(kubeClient client.Client) error {
 		kubeClient.Delete(cleanupCtx, kustomization)
 	}
 
-	// Wait for deletion
 	for {
 		select {
 		case <-cleanupCtx.Done():
@@ -244,6 +233,7 @@ func cleanupVersionCheckKustomization(kubeClient client.Client) error {
 		default:
 			if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, kustomization); err != nil {
 				if apierrors.IsNotFound(err) {
+					tflog.Debug(cleanupCtx, "Successfully cleaned up schema-version-check kustomization and all related resources")
 					return nil
 				}
 			}

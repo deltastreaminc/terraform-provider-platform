@@ -1,4 +1,4 @@
-package main
+package schemamigration
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -90,8 +91,13 @@ func CreateRDSSnapshot(ctx context.Context, rdsClient *rds.Client, mainRDSDBInst
 		DBSnapshotIdentifier: aws.String(snapshotID),
 	}, 30*time.Minute)
 	if err != nil {
-		return "", fmt.Errorf("failed waiting for RDS snapshot: %v", err)
+		return "", fmt.Errorf("failed waiting for RDS snapshot %s: %v", snapshotID, err)
 	}
+
+	tflog.Debug(ctx, "RDS snapshot created", map[string]interface{}{
+		"snapshot_id":     snapshotID,
+		"source_instance": mainRDSDBInstanceIdentifier,
+	})
 
 	return snapshotID, nil
 }
@@ -121,7 +127,7 @@ func CreateTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get main instance details: %v", err)
+		return "", fmt.Errorf("failed to get main instance details for network settings: %v", err)
 	}
 	if len(mainInstance.DBInstances) == 0 {
 		return "", fmt.Errorf("main instance %s not found", mainRDSDBInstanceIdentifier)
@@ -196,7 +202,7 @@ func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSIns
 		time.Sleep(10 * time.Second)
 	}
 	if secretArn == "" {
-		return "", "", fmt.Errorf("failed to get RDS secret ARN after 5 minutes")
+		return "", "", fmt.Errorf("failed to get RDS secret ARN after 5 minutes for instance %s", restoredRDSInstanceID)
 	}
 
 	parts := strings.Split(secretArn, ":")
@@ -209,14 +215,14 @@ func waitForRDSSecret(ctx context.Context, rdsClient *rds.Client, restoredRDSIns
 }
 
 // PrepareRDSForMigration prepares RDS for migration
-func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID string, restoredRDSEndpoint string, restoredRDSMasterSecretName string, snapshotID string, err error) {
+func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID string, err error) {
 
 	// Get RDS client
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(region),
 	)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("unable to load SDK config: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to load SDK config: %v", err)
 	}
 	rdsClient := rds.NewFromConfig(cfg)
 
@@ -237,7 +243,7 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 	})
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to get main instance details: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to get main instance details for KMS key: %v", err)
 	}
 	if len(mainInstance.DBInstances) == 0 {
 		return "", "", "", "", fmt.Errorf("main instance %s not found", mainRDSDBInstanceIdentifier)
@@ -247,11 +253,11 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	if mainDB.KmsKeyId != nil {
 		kmsKeyID = *mainDB.KmsKeyId
 	} else {
-		return "", "", "", "", fmt.Errorf("main RDS instance does not have a KMS key")
+		return "", "", "", "", fmt.Errorf("main RDS instance %s does not have a KMS key", mainRDSDBInstanceIdentifier)
 	}
 
 	// Enable managed password and wait for secret
-	if err := enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID, kmsKeyID); err != nil {
+	if err = enableManagedPassword(ctx, rdsClient, restoredRDSInstanceID, kmsKeyID); err != nil {
 		return "", "", "", "", fmt.Errorf("failed to enable managed password: %v", err)
 	}
 
@@ -272,6 +278,11 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	}
 	endpoint := *instanceDetails.DBInstances[0].Endpoint.Address
 	restoredRDSEndpoint = endpoint
+
+	tflog.Debug(ctx, "Test RDS instance created", map[string]interface{}{
+		"instance_id": restoredRDSInstanceID,
+		"endpoint":    endpoint,
+	})
 
 	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
 }
@@ -305,7 +316,8 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 	// Wait for kustomization and check logs
 	_, err := waitForRDSMigrationKustomizationAndCheckLogs(ctx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
 	if err != nil {
-		return fmt.Errorf("failed waiting for kustomization: %v", err)
+		tflog.Debug(ctx, "failed waiting for kustomization", map[string]interface{}{"error": err.Error()})
+		return err
 	}
 
 	return nil

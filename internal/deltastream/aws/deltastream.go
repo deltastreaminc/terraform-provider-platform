@@ -22,6 +22,7 @@ import (
 
 	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
+	schemamigration "github.com/deltastreaminc/terraform-provider-platform/internal/schema-migration-checks"
 )
 
 //go:embed assets/flux-system/flux.yaml.tmpl
@@ -29,12 +30,6 @@ var fluxManifestTemplate []byte
 
 //go:embed assets/cluster-config/platform.yaml.tmpl
 var platformTemplate []byte
-
-// RunMigrationTestBeforeUpgrade runs schema migration test before upgrade
-func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client) error {
-	tflog.Debug(ctx, "Schema migration test before upgrade")
-	return nil
-}
 
 func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d diag.Diagnostics) {
 	clusterConfig, diags := dp.ClusterConfigurationData(ctx)
@@ -44,6 +39,12 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 	}
 
 	kubeClient, err := util.GetKubeClient(ctx, cfg, dp)
+	if err != nil {
+		d.AddError("error getting kube client", err.Error())
+		return
+	}
+
+	kubeClientSets, err := util.GetKubeClientSets(ctx, cfg, dp)
 	if err != nil {
 		d.AddError("error getting kube client", err.Error())
 		return
@@ -65,9 +66,13 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 
 	if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
 		tflog.Debug(ctx, "Running schema migration test...")
-		err = RunMigrationTestBeforeUpgrade(ctx, kubeClient.Client)
+		migrationTestSuccessfulContinueToDeploy, err := schemamigration.RunMigrationTestBeforeUpgrade(ctx, kubeClient.Client, kubeClientSets)
 		if err != nil {
-			d.AddError("schema migration test failed", err.Error())
+			d.AddError("schema migration test failed due to internal error", err.Error())
+			return
+		}
+		if !migrationTestSuccessfulContinueToDeploy {
+			d.AddError("schema migration test failed", "schema migration failed")
 			return
 		}
 	}

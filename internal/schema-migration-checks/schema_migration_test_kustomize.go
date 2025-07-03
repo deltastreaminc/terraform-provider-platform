@@ -1,4 +1,4 @@
-package main
+package schemamigration
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	yaml "gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -92,6 +93,7 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 	// Check if job is complete
 	for _, condition := range job.Status.Conditions {
 		if condition.Type == batchv1.JobComplete && condition.Status == "True" {
+			tflog.Debug(ctx, "Job completed", map[string]interface{}{"job_name": jobName})
 			return true, nil
 		} else if condition.Type == batchv1.JobFailed && condition.Status == "True" {
 			return false, fmt.Errorf("job has failed")

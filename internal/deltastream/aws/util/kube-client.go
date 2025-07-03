@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -206,6 +207,26 @@ func GetKubeClient(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplan
 
 	kubeClientCache.Set("kubeClient", rClient, cacheTimeout)
 
+	return
+}
+
+func GetKubeClientSets(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (clientSet *kubernetes.Clientset, err error) {
+	tflog.Debug(ctx, "creating new kube client")
+
+	kubeconfig, err := GetKubeConfig(ctx, dp, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kube client config: %w", err)
+	}
+
+	clientSet, err = kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create k8s clientset: %v", err)
+	}
 	return
 }
 
