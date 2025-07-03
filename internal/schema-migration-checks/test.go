@@ -52,6 +52,5 @@ func main() {
 	}
 
 	// Success - exit with 0
-	fmt.Println("Migration test completed successfully")
 	os.Exit(0)
 }

@@ -183,7 +183,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 
 	// Print only the version JSON
 	versionJSONMsg := fmt.Sprintf("Found version JSON:\n%s", versionJSON)
-	fmt.Printf("%s\n", versionJSONMsg)
+	_ = versionJSONMsg
 
 	var status SchemaStatus
 	if err := json.Unmarshal([]byte(versionJSON), &status); err != nil {
@@ -192,12 +192,12 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 
 	// Print parsed versions using fmt.Sprintf
 	versionsMsg := fmt.Sprintf("Parsed versions: currentVersion=%q, newVersion=%q", status.CurrentVersion, status.NewVersion)
-	fmt.Printf("%s\n", versionsMsg)
+	_ = versionsMsg
 
 	// Compare versions
 	if status.CurrentVersion == status.NewVersion {
 		sameVersionMsg := fmt.Sprintf("Versions are the same (%s), no need to run schema migration", status.CurrentVersion)
-		fmt.Printf("%s\n", sameVersionMsg)
+		_ = sameVersionMsg
 		return false, nil
 	}
 	if status.CurrentVersion > status.NewVersion {
@@ -205,7 +205,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 	}
 
 	startMigrationMsg := fmt.Sprintf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
-	fmt.Printf("%s\n", startMigrationMsg)
+	_ = startMigrationMsg
 
 	return true, nil
 }
