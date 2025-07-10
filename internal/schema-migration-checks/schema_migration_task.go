@@ -221,8 +221,10 @@ func getLatestAPIServerVersion(ctx context.Context, cfg aws.Config, stack, produ
 		bucketName = "deltastream-packages-maven"
 	}
 
-	// Use the passed config instead of loading a new one
-	s3client := s3.NewFromConfig(cfg)
+	// Hardcode region to us-east-2 like in copy-images.go
+	bucketCfg := cfg.Copy()
+	bucketCfg.Region = "us-east-2"
+	s3client := s3.NewFromConfig(bucketCfg)
 	imageListPath := fmt.Sprintf("deltastreamv2-release-images/image-list-%s.yaml", productVersion)
 
 	getObjectOut, err := s3client.GetObject(ctx, &s3.GetObjectInput{
