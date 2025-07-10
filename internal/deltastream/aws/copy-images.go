@@ -26,7 +26,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/sethvargo/go-retry"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/yaml"
 
 	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
 )
@@ -38,41 +37,10 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		return
 	}
 
-	bucketName := "prod-ds-packages-maven"
-	if clusterConfig.Stack.ValueString() != "prod" {
-		bucketName = "deltastream-packages-maven"
-	}
-
-	bucketCfg := cfg.Copy()
-	bucketCfg.Region = "us-east-2"
-	s3client := s3.NewFromConfig(bucketCfg)
-	imageListPath := fmt.Sprintf("deltastreamv2-release-images/image-list-%s.yaml", clusterConfig.ProductVersion.ValueString())
-	tflog.Debug(ctx, "downloading image list", map[string]any{
-		"bucket":          bucketName,
-		"image list path": imageListPath,
-	})
-	getObjectOut, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(imageListPath),
-	})
+	// Use the common function to get image list from S3
+	imageList, err := getImageListFromS3(ctx, cfg, clusterConfig.Stack.ValueString(), clusterConfig.ProductVersion.ValueString())
 	if err != nil {
 		d.AddError("error getting image list", err.Error())
-		return
-	}
-	defer getObjectOut.Body.Close()
-
-	imageList := struct {
-		Images            []string `json:"images"`
-		ExecEngineVersion string   `json:"execEngineVersion"`
-	}{}
-
-	b, err := io.ReadAll(getObjectOut.Body)
-	if err != nil {
-		d.AddError("error reading image list", err.Error())
-		return
-	}
-	if err := yaml.Unmarshal(b, &imageList); err != nil {
-		d.AddError("error unmarshalling image list", err.Error())
 		return
 	}
 
