@@ -10,7 +10,6 @@ import (
 	_ "embed"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -24,15 +23,9 @@ import (
 var schemaMigrationTestKustomize string
 
 // PrepareRDSForMigration prepares RDS for migration
-func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID string, err error) {
+func PrepareRDSForMigration(ctx context.Context, cfg aws.Config, kubeClient client.Client, k8sClientset *kubernetes.Clientset, ApiServerVersion string, mainRDSDBInstanceIdentifier string, region string, infraID string) (restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID string, err error) {
 
 	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(region),
-	)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to load SDK config: %v", err)
-	}
 	rdsClient := rds.NewFromConfig(cfg)
 
 	// Create new snapshot
@@ -76,21 +69,24 @@ func PrepareRDSForMigration(ctx context.Context, kubeClient client.Client, k8sCl
 	}
 
 	// Get RDS endpoint
-	instanceDetails, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+	restoredInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 	})
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to get instance details: %v", err)
+		return "", "", "", "", fmt.Errorf("failed to get restored instance details: %v", err)
 	}
-	if len(instanceDetails.DBInstances) == 0 {
-		return "", "", "", "", fmt.Errorf("instance %s not found", restoredRDSInstanceID)
+	if len(restoredInstance.DBInstances) == 0 {
+		return "", "", "", "", fmt.Errorf("restored instance %s not found", restoredRDSInstanceID)
 	}
-	endpoint := *instanceDetails.DBInstances[0].Endpoint.Address
-	restoredRDSEndpoint = endpoint
+	restoredRDSInstance := restoredInstance.DBInstances[0]
+	restoredRDSEndpoint = *restoredRDSInstance.Endpoint.Address
 
-	tflog.Debug(ctx, "Test RDS instance created", map[string]interface{}{
-		"instance_id": restoredRDSInstanceID,
-		"endpoint":    endpoint,
+	tflog.Debug(ctx, "RDS migration preparation completed", map[string]interface{}{
+		"restored_rds_instance_id":     restoredRDSInstanceID,
+		"restored_rds_endpoint":        restoredRDSEndpoint,
+		"restored_rds_master_secret":   restoredRDSMasterSecretName,
+		"snapshot_id":                  snapshotID,
+		"main_rds_instance_identifier": mainRDSDBInstanceIdentifier,
 	})
 
 	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
@@ -206,13 +202,8 @@ func ApplyMigrationTestKustomize(ctx context.Context, kubeClient client.Client, 
 }
 
 // getDeploymentConfig gets configuration from AWS Secrets Manager
-func getDeploymentConfig(ctx context.Context, stack, infraID, region, eksResourceID string) (map[string]interface{}, error) {
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %v", err)
-	}
+func getDeploymentConfig(ctx context.Context, cfg aws.Config, stack, infraID, region, eksResourceID string) (map[string]interface{}, error) {
+	// Use the passed config instead of loading a new one
 	secretsClient := secretsmanager.NewFromConfig(cfg)
 
 	// Construct secret path using the same format as in deployment-config.go
@@ -341,15 +332,11 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 }
 
 // cleanupSchemaRestoredRDSInstanceandSnapshot cleans up the test RDS instance and snapshot created for schema migration testing
-func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationTest map[string]string) error {
+func cleanupSchemaRestoredRDSInstanceandSnapshot(cfg aws.Config, templateVarsForSchemaMigrationTest map[string]string) error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Get RDS client
-	cfg, err := config.LoadDefaultConfig(cleanupCtx, config.WithRegion(templateVarsForSchemaMigrationTest["Region"]))
-	if err != nil {
-		return err
-	}
+	// Use the passed config instead of loading a new one
 	rdsClient := rds.NewFromConfig(cfg)
 
 	// Delete RDS instance
@@ -368,7 +355,7 @@ func cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationT
 	if snapshotID == "" {
 		snapshotID = generateSnapshotID(templateVarsForSchemaMigrationTest["infraID"], templateVarsForSchemaMigrationTest["ApiServerNewVersion"])
 	}
-	_, err = rdsClient.DeleteDBSnapshot(cleanupCtx, &rds.DeleteDBSnapshotInput{
+	_, err := rdsClient.DeleteDBSnapshot(cleanupCtx, &rds.DeleteDBSnapshotInput{
 		DBSnapshotIdentifier: aws.String(snapshotID),
 	})
 	if err != nil {

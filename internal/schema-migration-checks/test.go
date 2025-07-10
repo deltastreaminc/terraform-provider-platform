@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/go-logr/zapr"
@@ -81,6 +82,16 @@ func TestSchemaMigration(t *testing.T) {
 	}
 	t.Log("Successfully got kube client")
 
+	// Create default AWS config
+	t.Log("Creating AWS config...")
+	awsCfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		t.Logf("Error creating AWS config: %v", err)
+		tflog.Error(ctx, "Error creating AWS config", map[string]interface{}{"error": err.Error()})
+		t.Fatal("Error creating AWS config: ", err)
+	}
+	t.Log("Successfully created AWS config")
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Minute)
 	defer cancel()
@@ -90,7 +101,7 @@ func TestSchemaMigration(t *testing.T) {
 	// Run migration test
 	t.Log("Running schema migration test...")
 	tflog.Debug(ctx, "Running schema migration test...")
-	success, err := RunMigrationTestBeforeUpgrade(ctx, kubeClient, k8sClientset)
+	success, err := RunMigrationTestBeforeUpgrade(ctx, awsCfg, kubeClient, k8sClientset)
 	if err != nil {
 		t.Logf("Migration test error: %v", err)
 		d.AddError("schema migration test failed", err.Error())

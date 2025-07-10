@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
@@ -20,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
 
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 25*time.Minute)
@@ -44,7 +43,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}
 
 	// Capture api-server new version using product.yaml from S3
-	apiServerVersion, err := getLatestAPIServerVersion(timeoutCtx, string(secret.Data["stack"]), string(secret.Data["platformVersion"]))
+	apiServerVersion, err := getLatestAPIServerVersion(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["platformVersion"]))
 	if err != nil {
 		return false, fmt.Errorf("failed to get latest API server version: %v", err)
 	}
@@ -55,31 +54,28 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	snapshotID := generateSnapshotID(string(secret.Data["infraID"]), apiServerVersion)
 
 	// Get AWS RDS client to check if resources exist
-	cfg, err := config.LoadDefaultConfig(timeoutCtx, config.WithRegion(string(secret.Data["region"])))
-	if err == nil {
-		rdsClient := rds.NewFromConfig(cfg)
+	rdsClient := rds.NewFromConfig(cfg)
 
-		// Check if RDS instance exists
-		_, err := rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
-			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-		})
+	// Check if RDS instance exists
+	_, err = rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+	})
 
-		// Check if snapshot exists
-		_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
-			DBSnapshotIdentifier: aws.String(snapshotID),
-		})
+	// Check if snapshot exists
+	_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
+		DBSnapshotIdentifier: aws.String(snapshotID),
+	})
 
-		if err == nil || snapshotErr == nil {
-			tflog.Debug(ctx, "Found existing RDS resources, cleaning up and returning")
-			cleanupVars := map[string]string{
-				"Region":               string(secret.Data["region"]),
-				"ApiServerNewVersion":  apiServerVersion,
-				"test_rds_instance_id": restoredRDSInstanceID,
-				"snapshot_id":          snapshotID,
-				"infraID":              string(secret.Data["infraID"]),
-			}
-			cleanupSchemaRestoredRDSInstanceandSnapshot(cleanupVars)
+	if err == nil || snapshotErr == nil {
+		tflog.Debug(ctx, "Found existing RDS resources, cleaning up and returning")
+		cleanupVars := map[string]string{
+			"Region":               cfg.Region,
+			"ApiServerNewVersion":  apiServerVersion,
+			"test_rds_instance_id": restoredRDSInstanceID,
+			"snapshot_id":          snapshotID,
+			"infraID":              string(secret.Data["infraID"]),
 		}
+		cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
 		return true, nil
 	}
 
@@ -113,14 +109,14 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	tflog.Debug(ctx, "Found api-server pods, proceeding with migration check")
 
 	// Get deployment config
-	deploymentConfig, err := getDeploymentConfig(timeoutCtx, string(secret.Data["stack"]), string(secret.Data["infraID"]), string(secret.Data["region"]), string(secret.Data["resourceID"]))
+	deploymentConfig, err := getDeploymentConfig(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["infraID"]), cfg.Region, string(secret.Data["resourceID"]))
 	if err != nil {
 		return false, fmt.Errorf("failed to get deployment config: %v", err)
 	}
 
 	templateVarsforVersionCheck := map[string]string{
 		"DsEcrAccountID":      string(secret.Data["dsEcrAccountID"]),
-		"Region":              string(secret.Data["region"]),
+		"Region":              cfg.Region,
 		"ApiServerNewVersion": apiServerVersion,
 	}
 
@@ -154,7 +150,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	templateVarsForSchemaMigrationTest := map[string]string{
 		"test_db_name":         mainRDSDatabaseName,
 		"DsEcrAccountID":       string(secret.Data["dsEcrAccountID"]),
-		"Region":               string(secret.Data["region"]),
+		"Region":               cfg.Region,
 		"ApiServerNewVersion":  apiServerVersion,
 		"namespace":            "schema-test-migrate",
 		"test_rds_schema_user": fmt.Sprintf("schematestuser%s", time.Now().Format("01021504")),
@@ -173,7 +169,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}
 
 	// Prepare RDS for migration
-	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, kubeClient, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"])
+	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, cfg, kubeClient, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"])
 	if err != nil {
 		return false, err
 	}
@@ -210,7 +206,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 	}()
 
 	go func() {
-		if err := cleanupSchemaRestoredRDSInstanceandSnapshot(templateVarsForSchemaMigrationTest); err != nil {
+		if err := cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, templateVarsForSchemaMigrationTest); err != nil {
 			tflog.Debug(ctx, "Failed to cleanup schema restored RDS instance and snapshot", map[string]interface{}{"error": err.Error()})
 		}
 	}()
@@ -219,21 +215,14 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, kubeClient client.Client
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
-func getLatestAPIServerVersion(ctx context.Context, stack, productVersion string) (string, error) {
+func getLatestAPIServerVersion(ctx context.Context, cfg aws.Config, stack, productVersion string) (string, error) {
 	bucketName := "prod-ds-packages-maven"
 	if stack != "prod" {
 		bucketName = "deltastream-packages-maven"
 	}
 
-	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to load AWS config: %v", err)
-	}
-
-	bucketCfg := cfg.Copy()
-	bucketCfg.Region = "us-east-2"
-	s3client := s3.NewFromConfig(bucketCfg)
+	// Use the passed config instead of loading a new one
+	s3client := s3.NewFromConfig(cfg)
 	imageListPath := fmt.Sprintf("deltastreamv2-release-images/image-list-%s.yaml", productVersion)
 
 	getObjectOut, err := s3client.GetObject(ctx, &s3.GetObjectInput{
