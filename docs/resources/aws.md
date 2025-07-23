@@ -59,6 +59,7 @@ Required:
 - `dynamodb_table_name` (String) The name of the DynamoDB table for storing credentials in the dataplane vault.
 - `ecr_readonly_role_arn` (String) The ARN of the role to assume for read-only access to ECR.
 - `eks_resource_id` (String) The resource ID of the DeltaStream dataplane (provided by DeltaStream).
+- `enable_schema_migration_test` (Boolean) Flag to enable schema migration test before deploying new version.
 - `functions_bucket` (String) The S3 bucket for storing Functiosn jar artifacts.
 - `infra_id` (String) The infra ID of the DeltaStream dataplane (provided by DeltaStream).
 - `infra_manager_role_arn` (String) The ARN of the role to assume for managing infra resources.
@@ -76,6 +77,9 @@ Required:
 - `loki_role_arn` (String) The ARN of the role to assume for managing Loki resources.
 - `materialized_view_store_type` (String) Materialized view store type, one of postgres or clickhouse.
 - `metrics_url` (String) The URL to push metrics.
+- `nodepool_capacity_type` (String) The capacity type for the node pool, can be on-demand or spot.
+- `nodepool_cpu_limit` (Number) The CPU limit for the node pool.
+- `nodepool_instance_types` (List of String) The list of instance types for the node pool.
 - `o11y_bucket` (String) The S3 bucket for storing observability data.
 - `o11y_hostname` (String) The hostname of the observability endpoint.
 - `o11y_subnet_mode` (String) The subnet mode for observability endpoint.
@@ -87,6 +91,7 @@ Required:
 - `product_artifacts_bucket` (String) The S3 bucket for storing DeltaStream product artifacts.
 - `product_version` (String) The version of the DeltaStream product. (provided by DeltaStream)
 - `public_subnet_ids` (List of String) The public subnet IDs with internet gateway.
+- `query_service_role_arn` (String) The ARN of the role to assume for query service.
 - `rds_ca_certs_secret` (String) The secret id in AWS secrets manager holding RDS instance AWS CA certificates
 - `rds_control_plane_database_name` (String) RDS control plane postgres database name for deltastream
 - `rds_control_plane_host_name` (String) RDS control plane host name

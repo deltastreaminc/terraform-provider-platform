@@ -93,6 +93,7 @@ type ClusterConfiguration struct {
 	KarpenterNodeRoleName            basetypes.StringValue `tfsdk:"karpenter_node_role_name"`
 	KarpenterIrsaRoleArn             basetypes.StringValue `tfsdk:"karpenter_irsa_role_arn"`
 	StoreProxyRoleArn                basetypes.StringValue `tfsdk:"store_proxy_role_arn"`
+	QueryServiceRoleArn              basetypes.StringValue `tfsdk:"query_service_role_arn"`
 	Cw2LokiRoleArn                   basetypes.StringValue `tfsdk:"cw2loki_role_arn"`
 	EcrReadonlyRoleArn               basetypes.StringValue `tfsdk:"ecr_readonly_role_arn"`
 	DsCrossAccountRoleArn            basetypes.StringValue `tfsdk:"ds_cross_account_role_arn"`
@@ -396,6 +397,11 @@ var Schema = schema.Schema{
 				},
 				"store_proxy_role_arn": schema.StringAttribute{
 					Description: "The ARN of the role to assume to facilitate connection to customer stores.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
+				},
+				"query_service_role_arn": schema.StringAttribute{
+					Description: "The ARN of the role to assume for query service.",
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
 				},
