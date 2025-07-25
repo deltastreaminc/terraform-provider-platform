@@ -118,7 +118,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		}
 		// this should never return true as cleanup is an async operation within AWS itself and can take up-to 30 minutes to complete
 		tflog.Warn(ctx, "Cleanup of prior schema migration test RDS instance and snapshot initiated, aborting deployment until we have no prior schema test instance remaining")
-		return false, nil
+		return false, fmt.Errorf("prior schema migration test RDS instance or snapshot exists, cleanup initiated, cannot proceed with deployment until prior test RDS instances are removed")
 	}
 
 	tflog.Debug(ctx, "Checking for schema-migrate kustomization")
@@ -141,7 +141,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Check if kustomization api-server pods in a deltastream namespace exist. If they do not exist, return nil (this could be the first time install).
 	apiServerPods := &corev1.PodList{}
 	if err := kubeClient.List(timeoutCtx, apiServerPods, client.InNamespace("deltastream"), client.MatchingLabels{"app.kubernetes.io/name": "api-server"}); err != nil {
-		return false, fmt.Errorf("failed to check api-server pods: %v", err)
+		return false, fmt.Errorf("failed to check api-server pods: %w", err)
 	}
 
 	if len(apiServerPods.Items) == 0 {
@@ -155,7 +155,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Get deployment config
 	deploymentConfig, err := getDeploymentConfig(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["infraID"]), cfg.Region, string(secret.Data["resourceID"]))
 	if err != nil {
-		return false, fmt.Errorf("failed to get deployment config: %v", err)
+		return false, fmt.Errorf("failed to get deployment config: %w", err)
 	}
 
 	templateVarsforVersionCheck := map[string]string{
