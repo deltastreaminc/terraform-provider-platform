@@ -2,6 +2,7 @@ package schemamigration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -19,6 +21,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// RunMigrationTestBeforeUpgrade checks if schema migration is required before upgrading the API server.
+// When error is nil it returns true to commence deployment of new version for following cases
+//   - This is a first time install if no schema migrate kustomize exist
+//   - This is a first time install if no api-server pod exist
+//   - No schema version change detected compared to current database state
+//   - Schema version was checked and a test was done to review any issue, it will return true and nil for error in that case
+//
+// All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
 
 	// Create context with timeout
@@ -26,26 +36,26 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	defer cancel()
 
 	// Check and cleanup any prior schema test kustomizations
-	if shouldReturn, err := cleanupPriorSchemaTestKustomizations(timeoutCtx, kubeClient); shouldReturn {
-		return true, err
+	if err := cleanupPriorSchemaTestKustomizations(timeoutCtx, kubeClient); err != nil {
+		return false, err
 	}
 
 	tflog.Debug(ctx, "Checking for cluster-config namespace and cluster-settings secret")
 
 	_, err = k8sClientset.CoreV1().Namespaces().Get(timeoutCtx, "cluster-config", metav1.GetOptions{})
 	if err != nil {
-		return false, fmt.Errorf("failed to check namespace cluster-config: %v", err)
+		return false, fmt.Errorf("failed to check namespace cluster-config: %w", err)
 	}
 
 	secret, err := k8sClientset.CoreV1().Secrets("cluster-config").Get(timeoutCtx, "cluster-settings", metav1.GetOptions{})
 	if err != nil {
-		return false, fmt.Errorf("failed to get cluster-settings secret: %v", err)
+		return false, fmt.Errorf("failed to get cluster-settings secret: %w", err)
 	}
 
 	// Capture api-server new version using product.yaml from S3
 	apiServerVersion, err := getLatestAPIServerVersion(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["platformVersion"]))
 	if err != nil {
-		return false, fmt.Errorf("failed to get latest API server version: %v", err)
+		return false, fmt.Errorf("failed to get latest API server version: %w", err)
 	}
 
 	tflog.Debug(ctx, "Retrieved new API server version for schema test", map[string]interface{}{"version": apiServerVersion})
@@ -56,18 +66,45 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Get AWS RDS client to check if resources exist
 	rdsClient := rds.NewFromConfig(cfg)
 
-	// Check if RDS instance exists
+	cleanupRequired := false
+	// Check if an earlier schema migration test RDS instance exists
 	_, err = rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 	})
+	if err != nil {
+		var notFound *rdsTypes.DBInstanceNotFoundFault
+		if !errors.As(err, &notFound) {
+			return false, fmt.Errorf("failed to check RDS instance: %w", err)
+		}
+		tflog.Debug(ctx, "Prior RDS instance does not exist, proceeding with migration test")
+	} else {
+		cleanupRequired = true
+	}
 
 	// Check if snapshot exists
 	_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
 		DBSnapshotIdentifier: aws.String(snapshotID),
 	})
 
-	if err == nil || snapshotErr == nil {
-		tflog.Debug(ctx, "Found existing RDS resources, cleaning up and returning")
+	if snapshotErr != nil {
+		var notFound *rdsTypes.DBSnapshotNotFoundFault
+		if !errors.As(snapshotErr, &notFound) {
+			return false, fmt.Errorf("failed to check RDS snapshot: %w", snapshotErr)
+		}
+		tflog.Debug(ctx, "Prior RDS snapshot does not exist, proceeding with migration test")
+	} else {
+		cleanupRequired = true
+	}
+
+	if cleanupRequired {
+		// If cleanup is required, we need to clean up the prior schema migration test RDS instance and snapshot
+		// At this point we cannot proceed until all cleanup is done
+		// The cleanup is a best effort and will run in the background by AWS, here we will initiate it and return false to indicate we cannot proceed with the deployment
+		tflog.Warn(ctx, "Prior schema migration test RDS instance or snapshot exists, initiating cleanup", map[string]interface{}{
+			"restoredRDSInstanceID": restoredRDSInstanceID,
+			"snapshotID":            snapshotID,
+			"apiServerVersion":      apiServerVersion,
+		})
 		cleanupVars := map[string]string{
 			"Region":               cfg.Region,
 			"ApiServerNewVersion":  apiServerVersion,
@@ -75,8 +112,13 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 			"snapshot_id":          snapshotID,
 			"infraID":              string(secret.Data["infraID"]),
 		}
-		cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
-		return true, nil
+		err = cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
+		if err != nil {
+			return false, fmt.Errorf("failed to initiate cleanup of prior schema migration test RDS instance and snapshot: %w", err)
+		}
+		// this should never return true as cleanup is an async operation within AWS itself and can take up-to 30 minutes to complete
+		tflog.Warn(ctx, "Cleanup of prior schema migration test RDS instance and snapshot initiated, aborting deployment until we have no prior schema test instance remaining")
+		return false, fmt.Errorf("prior schema migration test RDS instance or snapshot exists, cleanup initiated, cannot proceed with deployment until prior test RDS instances are removed")
 	}
 
 	tflog.Debug(ctx, "Checking for schema-migrate kustomization")
@@ -90,6 +132,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	}
 	if err := kubeClient.Get(timeoutCtx, client.ObjectKeyFromObject(schemaMigrateKustomization), schemaMigrateKustomization); err != nil {
 		tflog.Debug(ctx, "Schema-migrate kustomization not found, returning (first time install)")
+		// this is the first time install, so we can return true to proceed with the deployment no schema migration test is required
 		return true, nil
 	}
 
@@ -98,11 +141,12 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Check if kustomization api-server pods in a deltastream namespace exist. If they do not exist, return nil (this could be the first time install).
 	apiServerPods := &corev1.PodList{}
 	if err := kubeClient.List(timeoutCtx, apiServerPods, client.InNamespace("deltastream"), client.MatchingLabels{"app.kubernetes.io/name": "api-server"}); err != nil {
-		return false, fmt.Errorf("failed to check api-server pods: %v", err)
+		return false, fmt.Errorf("failed to check api-server pods: %w", err)
 	}
 
 	if len(apiServerPods.Items) == 0 {
 		tflog.Debug(ctx, "No api-server pods found, returning (first time install)")
+		// this can occur during first time install, so we can return true to proceed with the deployment no schema migration test is required
 		return true, nil
 	}
 
@@ -111,7 +155,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Get deployment config
 	deploymentConfig, err := getDeploymentConfig(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["infraID"]), cfg.Region, string(secret.Data["resourceID"]))
 	if err != nil {
-		return false, fmt.Errorf("failed to get deployment config: %v", err)
+		return false, fmt.Errorf("failed to get deployment config: %w", err)
 	}
 
 	templateVarsforVersionCheck := map[string]string{
@@ -130,7 +174,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		return true, nil
 	}
 
-	tflog.Debug(ctx, "Schema migration required - starting migration test")
+	tflog.Warn(ctx, "Schema migration required - starting migration test")
 
 	mainRDSDatabaseName := ""
 	mainRDSDBInstanceIdentifier := ""
@@ -196,7 +240,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		return false, fmt.Errorf("schema migration test job failed")
 	}
 
-	tflog.Debug(ctx, "Schema migration test job completed")
+	tflog.Warn(ctx, "Schema migration test job completed successfully")
 
 	// Call cleanup functions
 	go func() {
@@ -268,7 +312,7 @@ func getLatestAPIServerVersion(ctx context.Context, cfg aws.Config, stack, produ
 }
 
 // cleanupPriorSchemaTestKustomizations checks for and cleans up any existing schema test kustomizations
-func cleanupPriorSchemaTestKustomizations(ctx context.Context, kubeClient client.Client) (bool, error) {
+func cleanupPriorSchemaTestKustomizations(ctx context.Context, kubeClient client.Client) error {
 	// Check and cleanup Schema Version Check kustomization
 	schemaVersionCheckKustomization := &kustomizev1.Kustomization{
 		ObjectMeta: metav1.ObjectMeta{
@@ -279,9 +323,9 @@ func cleanupPriorSchemaTestKustomizations(ctx context.Context, kubeClient client
 	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(schemaVersionCheckKustomization), schemaVersionCheckKustomization); err == nil {
 		tflog.Debug(ctx, "Found schema-version-check kustomization, cleaning up and returning")
 		if err := cleanupVersionCheckKustomization(kubeClient); err != nil {
-			return true, fmt.Errorf("failed to cleanup version check kustomization")
+			return fmt.Errorf("failed to cleanup version check kustomization %w", err)
 		}
-		return true, nil
+		return nil
 	}
 
 	// Check and cleanup Schema Migration Test kustomization
@@ -294,10 +338,10 @@ func cleanupPriorSchemaTestKustomizations(ctx context.Context, kubeClient client
 	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(schemaMigrationTestKustomization), schemaMigrationTestKustomization); err == nil {
 		tflog.Debug(ctx, "Found schema-migration-test kustomization, cleaning up and returning")
 		if err := cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient); err != nil {
-			return true, fmt.Errorf("failed to cleanup schema migration test namespace")
+			return fmt.Errorf("failed to cleanup schema migration test namespace %w", err)
 		}
-		return true, nil
+		return nil
 	}
 
-	return false, nil
+	return nil
 }
