@@ -2,6 +2,7 @@ package schemamigration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -19,6 +21,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// RunMigrationTestBeforeUpgrade checks if schema migration is required before upgrading the API server.
+// When error is nil it returns true to commence deployment of new version for following cases
+//   - This is a first time install if no schema migrate kustomize exist
+//   - This is a first time install if no api-server pod exist
+//   - No schema version change detected compared to current database state
+//   - Schema version was checked and a test was done to review any issue, it will return true and nil for error in that case
+//
+// All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
 
 	// Create context with timeout
@@ -56,19 +66,45 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	// Get AWS RDS client to check if resources exist
 	rdsClient := rds.NewFromConfig(cfg)
 
-	// Check if RDS instance exists
+	cleanupRequired := false
+	// Check if an earlier schema migration test RDS instance exists
 	_, err = rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 	})
+	if err != nil {
+		var notFound *rdsTypes.DBInstanceNotFoundFault
+		if !errors.As(err, &notFound) {
+			return false, fmt.Errorf("failed to check RDS instance: %w", err)
+		}
+		tflog.Debug(ctx, "Prior RDS instance does not exist, proceeding with migration test")
+	} else {
+		cleanupRequired = true
+	}
 
 	// Check if snapshot exists
 	_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
 		DBSnapshotIdentifier: aws.String(snapshotID),
 	})
 
-	if err == nil || snapshotErr == nil {
-		// this should never return
-		tflog.Debug(ctx, "Found existing RDS resources, cleaning up and returning")
+	if snapshotErr != nil {
+		var notFound *rdsTypes.DBSnapshotNotFoundFault
+		if !errors.As(snapshotErr, &notFound) {
+			return false, fmt.Errorf("failed to check RDS snapshot: %w", snapshotErr)
+		}
+		tflog.Debug(ctx, "Prior RDS snapshot does not exist, proceeding with migration test")
+	} else {
+		cleanupRequired = true
+	}
+
+	if cleanupRequired {
+		// If cleanup is required, we need to clean up the prior schema migration test RDS instance and snapshot
+		// At this point we cannot proceed until all cleanup is done
+		// The cleanup is a best effort and will run in the background by AWS, here we will initiate it and return false to indicate we cannot proceed with the deployment
+		tflog.Warn(ctx, "Prior schema migration test RDS instance or snapshot exists, initiating cleanup", map[string]interface{}{
+			"restoredRDSInstanceID": restoredRDSInstanceID,
+			"snapshotID":            snapshotID,
+			"apiServerVersion":      apiServerVersion,
+		})
 		cleanupVars := map[string]string{
 			"Region":               cfg.Region,
 			"ApiServerNewVersion":  apiServerVersion,
@@ -76,8 +112,13 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 			"snapshot_id":          snapshotID,
 			"infraID":              string(secret.Data["infraID"]),
 		}
-		cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
-		return true, nil
+		err = cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
+		if err != nil {
+			return false, fmt.Errorf("failed to initiate cleanup of prior schema migration test RDS instance and snapshot: %w", err)
+		}
+		// this should never return true as cleanup is an async operation within AWS itself and can take up-to 30 minutes to complete
+		tflog.Warn(ctx, "Cleanup of prior schema migration test RDS instance and snapshot initiated, aborting deployment until we have no prior schema test instance remaining")
+		return false, nil
 	}
 
 	tflog.Debug(ctx, "Checking for schema-migrate kustomization")
@@ -91,6 +132,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	}
 	if err := kubeClient.Get(timeoutCtx, client.ObjectKeyFromObject(schemaMigrateKustomization), schemaMigrateKustomization); err != nil {
 		tflog.Debug(ctx, "Schema-migrate kustomization not found, returning (first time install)")
+		// this is the first time install, so we can return true to proceed with the deployment no schema migration test is required
 		return true, nil
 	}
 
@@ -104,6 +146,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 
 	if len(apiServerPods.Items) == 0 {
 		tflog.Debug(ctx, "No api-server pods found, returning (first time install)")
+		// this can occur during first time install, so we can return true to proceed with the deployment no schema migration test is required
 		return true, nil
 	}
 
