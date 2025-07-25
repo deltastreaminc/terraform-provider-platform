@@ -174,7 +174,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		return true, nil
 	}
 
-	tflog.Debug(ctx, "Schema migration required - starting migration test")
+	tflog.Warn(ctx, "Schema migration required - starting migration test")
 
 	mainRDSDatabaseName := ""
 	mainRDSDBInstanceIdentifier := ""
@@ -240,7 +240,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		return false, fmt.Errorf("schema migration test job failed")
 	}
 
-	tflog.Debug(ctx, "Schema migration test job completed")
+	tflog.Warn(ctx, "Schema migration test job completed successfully")
 
 	// Call cleanup functions
 	go func() {
