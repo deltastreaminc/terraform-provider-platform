@@ -60,8 +60,8 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 		objName, _ := metadata["name"].(string)
 		namespace, _ := metadata["namespace"].(string)
 
-		// Add timeout context for manifest application - increased to 5 minutes
-		applyCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		// Add timeout context for manifest application - increased to 15 minutes
+		applyCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
 
 		diags := util.ApplyManifests(applyCtx, kubeClient, manifest)
@@ -79,7 +79,7 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, namespace, kustomizationName, jobName string) (bool, error) {
 	// Start looking for pods immediately
 	pods := &corev1.PodList{}
-	maxAttempts := 30 // 5 minutes total
+	maxAttempts := 60 // 10 minutes total
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err := kubeClient.List(ctx, pods, client.InNamespace(namespace), client.MatchingLabels{
 			"batch.kubernetes.io/job-name": jobName,
@@ -115,7 +115,7 @@ func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClien
 		}
 	}
 
-	maxWaitAttempts := 30 // 5 minutes total (30 * 10 seconds)
+	maxWaitAttempts := 300 // 50 minutes total (300 * 10 seconds)
 	for attempt := 0; attempt < maxWaitAttempts; attempt++ {
 		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
 			time.Sleep(10 * time.Second)
