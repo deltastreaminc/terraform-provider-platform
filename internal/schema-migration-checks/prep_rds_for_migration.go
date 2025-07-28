@@ -313,9 +313,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 			"main_instance":        mainRDSDBInstanceIdentifier,
 		})
 	} else {
-		tflog.Debug(ctx, "No parameter group found on main instance, will use default", map[string]interface{}{
-			"main_instance": mainRDSDBInstanceIdentifier,
-		})
+		return "", fmt.Errorf("main instance %s has no parameter group configured, cannot proceed with migration test", mainRDSDBInstanceIdentifier)
 	}
 
 	restoreInput := &rds.RestoreDBInstanceFromDBSnapshotInput{
