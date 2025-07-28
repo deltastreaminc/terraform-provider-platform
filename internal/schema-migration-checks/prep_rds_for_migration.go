@@ -3,6 +3,7 @@ package schemamigration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
+	rdsTypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -346,7 +348,13 @@ func cleanupSchemaRestoredRDSInstanceandSnapshot(cfg aws.Config, templateVarsFor
 			SkipFinalSnapshot:    aws.Bool(true),
 		})
 		if err != nil {
-			return err
+			var notFound *rdsTypes.DBInstanceNotFoundFault
+			if !errors.As(err, &notFound) {
+				return fmt.Errorf("failed to delete RDS instance: id: %s, %w", templateVarsForSchemaMigrationTest["test_rds_instance_id"], err)
+			} else {
+				tflog.Debug(cleanupCtx, "RDS instance not found, skipping deletion")
+				return nil
+			}
 		}
 	}
 
@@ -359,7 +367,13 @@ func cleanupSchemaRestoredRDSInstanceandSnapshot(cfg aws.Config, templateVarsFor
 		DBSnapshotIdentifier: aws.String(snapshotID),
 	})
 	if err != nil {
-		return err
+		var notFound *rdsTypes.DBSnapshotNotFoundFault
+		if !errors.As(err, &notFound) {
+			return fmt.Errorf("failed to delete RDS snapshot: id: %s, %w", snapshotID, err)
+		} else {
+			tflog.Debug(cleanupCtx, "RDS snapshot not found, skipping deletion")
+			return nil
+		}
 	}
 
 	tflog.Debug(cleanupCtx, "Successfully cleaned up schema migration test RDS instance and snapshot", map[string]interface{}{

@@ -235,7 +235,7 @@ func ApplyManifests(ctx context.Context, kubeClient *RetryableClient, manifestYa
 	for _, manifestYaml := range manifestYamls {
 		u := &unstructured.Unstructured{}
 
-		manifestLog := fmt.Sprintf("Unmarshalling manifest: %s", manifestYaml)
+		manifestLog := fmt.Sprintf("Unmarshalling manifest: %s", strings.ReplaceAll(manifestYaml, "\n", "\\n"))
 		tflog.Debug(ctx, manifestLog)
 		if err := yaml.Unmarshal([]byte(manifestYaml), u); err != nil {
 			d.AddError("Failed to unmarshal manifest", err.Error())
