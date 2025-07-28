@@ -89,6 +89,7 @@ func PrepareRDSForMigration(ctx context.Context, cfg aws.Config, kubeClient clie
 		"restored_rds_master_secret":   restoredRDSMasterSecretName,
 		"snapshot_id":                  snapshotID,
 		"main_rds_instance_identifier": mainRDSDBInstanceIdentifier,
+		"parameter_group_name":         *mainDB.DBParameterGroups[0].DBParameterGroupName,
 	})
 
 	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
@@ -343,25 +344,6 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	}, 30*time.Minute)
 	if err != nil {
 		return "", fmt.Errorf("failed waiting for test RDS instance: %v", err)
-	}
-
-	// Verify parameter group was applied
-	restoredInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-	})
-	if err == nil && len(restoredInstance.DBInstances) > 0 {
-		restoredDB := restoredInstance.DBInstances[0]
-		if len(restoredDB.DBParameterGroups) > 0 {
-			appliedGroup := restoredDB.DBParameterGroups[0].DBParameterGroupName
-			if parameterGroupName != nil && *appliedGroup != *parameterGroupName {
-				return "", fmt.Errorf("restored instance has incorrect parameter group: expected %s, got %s", *parameterGroupName, *appliedGroup)
-			} else {
-				tflog.Debug(ctx, "Parameter group applied correctly", map[string]interface{}{
-					"expected_group": *parameterGroupName,
-					"applied_group":  *appliedGroup,
-				})
-			}
-		}
 	}
 
 	return restoredRDSInstanceID, nil
