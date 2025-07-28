@@ -305,7 +305,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 
 	// Get parameter group from main instance
 	var parameterGroupName *string
-	if mainDB.DBParameterGroups != nil && len(mainDB.DBParameterGroups) > 0 {
+	if len(mainDB.DBParameterGroups) > 0 {
 		parameterGroupName = mainDB.DBParameterGroups[0].DBParameterGroupName
 		tflog.Debug(ctx, "Using parameter group from main instance", map[string]interface{}{
 			"parameter_group_name": *parameterGroupName,
@@ -351,7 +351,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	})
 	if err == nil && len(restoredInstance.DBInstances) > 0 {
 		restoredDB := restoredInstance.DBInstances[0]
-		if restoredDB.DBParameterGroups != nil && len(restoredDB.DBParameterGroups) > 0 {
+		if len(restoredDB.DBParameterGroups) > 0 {
 			appliedGroup := restoredDB.DBParameterGroups[0].DBParameterGroupName
 			if parameterGroupName != nil && *appliedGroup != *parameterGroupName {
 				return "", fmt.Errorf("restored instance has incorrect parameter group: expected %s, got %s", *parameterGroupName, *appliedGroup)
