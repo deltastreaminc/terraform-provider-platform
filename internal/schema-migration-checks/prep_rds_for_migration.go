@@ -288,7 +288,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		},
 	}
 
-	// Get network settings from the main instance to ensure test instance is in the same network
+	// Get network settings and parameter group from the main instance to ensure test instance is in the same network and uses the same parameter group
 	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 	})
@@ -303,6 +303,20 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	subnetGroup := mainDB.DBSubnetGroup
 	securityGroups := mainDB.VpcSecurityGroups
 
+	// Get parameter group from main instance
+	var parameterGroupName *string
+	if mainDB.DBParameterGroups != nil && len(mainDB.DBParameterGroups) > 0 {
+		parameterGroupName = mainDB.DBParameterGroups[0].DBParameterGroupName
+		tflog.Debug(ctx, "Using parameter group from main instance", map[string]interface{}{
+			"parameter_group_name": *parameterGroupName,
+			"main_instance":        mainRDSDBInstanceIdentifier,
+		})
+	} else {
+		tflog.Debug(ctx, "No parameter group found on main instance, will use default", map[string]interface{}{
+			"main_instance": mainRDSDBInstanceIdentifier,
+		})
+	}
+
 	restoreInput := &rds.RestoreDBInstanceFromDBSnapshotInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 		DBSnapshotIdentifier: aws.String(snapshotID),
@@ -311,6 +325,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		CopyTagsToSnapshot:   aws.Bool(false),
 		DBSubnetGroupName:    subnetGroup.DBSubnetGroupName,
 		VpcSecurityGroupIds:  make([]string, len(securityGroups)),
+		DBParameterGroupName: parameterGroupName,
 	}
 
 	for i, sg := range securityGroups {
@@ -328,6 +343,25 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	}, 30*time.Minute)
 	if err != nil {
 		return "", fmt.Errorf("failed waiting for test RDS instance: %v", err)
+	}
+
+	// Verify parameter group was applied
+	restoredInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+	})
+	if err == nil && len(restoredInstance.DBInstances) > 0 {
+		restoredDB := restoredInstance.DBInstances[0]
+		if restoredDB.DBParameterGroups != nil && len(restoredDB.DBParameterGroups) > 0 {
+			appliedGroup := restoredDB.DBParameterGroups[0].DBParameterGroupName
+			if parameterGroupName != nil && *appliedGroup != *parameterGroupName {
+				return "", fmt.Errorf("restored instance has incorrect parameter group: expected %s, got %s", *parameterGroupName, *appliedGroup)
+			} else {
+				tflog.Debug(ctx, "Parameter group applied correctly", map[string]interface{}{
+					"expected_group": *parameterGroupName,
+					"applied_group":  *appliedGroup,
+				})
+			}
+		}
 	}
 
 	return restoredRDSInstanceID, nil
