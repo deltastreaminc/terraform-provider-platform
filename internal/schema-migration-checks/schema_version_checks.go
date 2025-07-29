@@ -87,7 +87,7 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 		return
 	}
 
-	applyCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
 	diags := util.ApplyManifests(applyCtx, kubeClient, result)
