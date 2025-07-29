@@ -178,7 +178,7 @@ func createRDSMigrationNamespace(ctx context.Context, kubeClient client.Client, 
 }
 
 func cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient client.Client) (err error) {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Delete kustomization first
