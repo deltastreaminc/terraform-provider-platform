@@ -89,6 +89,7 @@ func PrepareRDSForMigration(ctx context.Context, cfg aws.Config, kubeClient clie
 		"restored_rds_master_secret":   restoredRDSMasterSecretName,
 		"snapshot_id":                  snapshotID,
 		"main_rds_instance_identifier": mainRDSDBInstanceIdentifier,
+		"parameter_group_name":         *mainDB.DBParameterGroups[0].DBParameterGroupName,
 	})
 
 	return restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, nil
@@ -288,7 +289,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		},
 	}
 
-	// Get network settings from the main instance to ensure test instance is in the same network
+	// Get network settings and parameter group from the main instance to ensure test instance is in the same network and uses the same parameter group
 	mainInstance, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(mainRDSDBInstanceIdentifier),
 	})
@@ -303,6 +304,18 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 	subnetGroup := mainDB.DBSubnetGroup
 	securityGroups := mainDB.VpcSecurityGroups
 
+	// Get parameter group from main instance
+	var parameterGroupName *string
+	if len(mainDB.DBParameterGroups) > 0 {
+		parameterGroupName = mainDB.DBParameterGroups[0].DBParameterGroupName
+		tflog.Debug(ctx, "Using parameter group from main instance", map[string]interface{}{
+			"parameter_group_name": *parameterGroupName,
+			"main_instance":        mainRDSDBInstanceIdentifier,
+		})
+	} else {
+		return "", fmt.Errorf("main instance %s has no parameter group configured, cannot proceed with migration test", mainRDSDBInstanceIdentifier)
+	}
+
 	restoreInput := &rds.RestoreDBInstanceFromDBSnapshotInput{
 		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
 		DBSnapshotIdentifier: aws.String(snapshotID),
@@ -311,6 +324,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 		CopyTagsToSnapshot:   aws.Bool(false),
 		DBSubnetGroupName:    subnetGroup.DBSubnetGroupName,
 		VpcSecurityGroupIds:  make([]string, len(securityGroups)),
+		DBParameterGroupName: parameterGroupName,
 	}
 
 	for i, sg := range securityGroups {
