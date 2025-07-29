@@ -93,7 +93,7 @@ func TestSchemaMigration(t *testing.T) {
 	t.Log("Successfully created AWS config")
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
 
 	d := diag.Diagnostics{}

@@ -222,7 +222,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 }
 
 func cleanupVersionCheckKustomization(kubeClient client.Client) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Delete Jobs and Pods first
