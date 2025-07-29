@@ -349,7 +349,7 @@ func createTestRDSInstance(ctx context.Context, rdsClient *rds.Client, snapshotI
 
 // cleanupSchemaRestoredRDSInstanceandSnapshot cleans up the test RDS instance and snapshot created for schema migration testing
 func cleanupSchemaRestoredRDSInstanceandSnapshot(cfg aws.Config, templateVarsForSchemaMigrationTest map[string]string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
 	// Use the passed config instead of loading a new one

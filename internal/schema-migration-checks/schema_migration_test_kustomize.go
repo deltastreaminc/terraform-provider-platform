@@ -61,7 +61,7 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 		namespace, _ := metadata["namespace"].(string)
 
 		// Add timeout context for manifest application - increased to 15 minutes
-		applyCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		applyCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		defer cancel()
 
 		diags := util.ApplyManifests(applyCtx, kubeClient, manifest)
@@ -178,7 +178,7 @@ func createRDSMigrationNamespace(ctx context.Context, kubeClient client.Client, 
 }
 
 func cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient client.Client) (err error) {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Delete kustomization first

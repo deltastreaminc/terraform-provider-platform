@@ -87,7 +87,7 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 		return
 	}
 
-	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	applyCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
 
 	diags := util.ApplyManifests(applyCtx, kubeClient, result)
@@ -222,7 +222,7 @@ func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sC
 }
 
 func cleanupVersionCheckKustomization(kubeClient client.Client) error {
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Delete Jobs and Pods first
