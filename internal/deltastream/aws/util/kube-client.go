@@ -161,6 +161,11 @@ func GetKubeConfig(ctx context.Context, dp awsconfig.AWSDataplane, cfg aws.Confi
 
 var kubeClientCache = ttlcache.New[string, *RetryableClient]()
 
+// ResetKubeClientCache resets the kube client cache to force creation of new clients with fresh tokens
+func ResetKubeClientCache() {
+	kubeClientCache.Delete("kubeClient")
+}
+
 func GetKubeClient(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (rClient *RetryableClient, err error) {
 	kubeClientCache.DeleteExpired()
 	if v := kubeClientCache.Get("kubeClient"); v != nil {

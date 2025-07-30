@@ -19,7 +19,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
+	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
+
+// refreshCredentialsForLongRunningOperation resets cache and recreates clients.
+// Call before any step that might take >10 minutes.
+func refreshCredentialsForLongRunningOperation(
+	ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane,
+) (client.Client, *kubernetes.Clientset, error) {
+	tflog.Debug(ctx, "Refreshing kube clients with new token (cache reset)")
+	util.ResetKubeClientCache()
+
+	kc, err := util.GetKubeClient(ctx, cfg, dp)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reinit kube client: %w", err)
+	}
+	ks, err := util.GetKubeClientSets(ctx, cfg, dp)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reinit k8s clientset: %w", err)
+	}
+	return kc.Client, ks, nil
+}
 
 // RunMigrationTestBeforeUpgrade checks if schema migration is required before upgrading the API server.
 // When error is nil it returns true to commence deployment of new version for following cases
@@ -29,14 +51,25 @@ import (
 //   - Schema version was checked and a test was done to review any issue, it will return true and nil for error in that case
 //
 // All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
-func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (migrationTestSuccessfulContinueToDeploy bool, err error) {
 
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 
+	// Get initial kube clients
+	kubeClient, err := util.GetKubeClient(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("failed to get kube client: %w", err)
+	}
+
+	k8sClientset, err := util.GetKubeClientSets(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("failed to get k8s clientset: %w", err)
+	}
+
 	// Check and cleanup any prior schema test kustomizations
-	if err := cleanupPriorSchemaTestKustomizations(timeoutCtx, kubeClient); err != nil {
+	if err := cleanupPriorSchemaTestKustomizations(timeoutCtx, kubeClient.Client); err != nil {
 		return false, err
 	}
 
@@ -164,7 +197,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 		"ApiServerNewVersion": apiServerVersion,
 	}
 
-	schemaMigrationRequired, err := IsSchemaVersionNewer(timeoutCtx, kubeClient, k8sClientset, templateVarsforVersionCheck)
+	schemaMigrationRequired, err := IsSchemaVersionNewer(timeoutCtx, kubeClient.Client, k8sClientset, templateVarsforVersionCheck)
 	if err != nil {
 		return false, err
 	}
@@ -207,13 +240,19 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	}
 
 	// Create namespace first
-	if err := createRDSMigrationNamespace(timeoutCtx, kubeClient, "schema-test-migrate"); err != nil {
+	if err := createRDSMigrationNamespace(timeoutCtx, kubeClient.Client, "schema-test-migrate"); err != nil {
 		tflog.Debug(ctx, "Failed to create namespace", map[string]interface{}{"error": err.Error()})
 		return false, err
 	}
 
+	// [REFRESH #1] — before long RDS phase (snapshot/restore/secret wait)
+	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("refresh before RDS: %w", err)
+	}
+
 	// Prepare RDS for migration
-	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, cfg, kubeClient, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"])
+	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, cfg, kubeClient.Client, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"])
 	if err != nil {
 		return false, err
 	}
@@ -224,14 +263,26 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 	templateVarsForSchemaMigrationTest["test_rds_master_externalsecret"] = restoredRDSMasterSecretName
 	templateVarsForSchemaMigrationTest["snapshot_id"] = snapshotID
 
+	// [REFRESH #2] — before Apply (OCIRepository/Kustomization + bootstrap Flux may take several minutes to hit API)
+	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("refresh before apply: %w", err)
+	}
+
 	// Apply migration test kustomize
-	err = ApplyMigrationTestKustomize(timeoutCtx, kubeClient, k8sClientset, templateVarsForSchemaMigrationTest)
+	err = ApplyMigrationTestKustomize(timeoutCtx, kubeClient.Client, k8sClientset, templateVarsForSchemaMigrationTest)
 	if err != nil {
 		return false, err
 	}
 
+	// [REFRESH #3] — before waiting for job completion (logs/status checks may take a long time)
+	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("refresh before wait: %w", err)
+	}
+
 	// Wait for job completion and check status
-	jobCompleted, err := waitForRDSMigrationKustomizationAndCheckLogs(timeoutCtx, kubeClient, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
+	jobCompleted, err := waitForRDSMigrationKustomizationAndCheckLogs(timeoutCtx, kubeClient.Client, k8sClientset, "schema-test-migrate", "schema-migration-test", "schema-migrate")
 	if err != nil {
 		return false, err
 	}
@@ -244,7 +295,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 
 	// Call cleanup functions
 	go func() {
-		if err := cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient); err != nil {
+		if err := cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient.Client); err != nil {
 			tflog.Debug(ctx, "Failed to cleanup schema migration test kustomization and namespace", map[string]interface{}{"error": err.Error()})
 		}
 	}()
