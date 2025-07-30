@@ -38,6 +38,8 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		return
 	}
 
+	deltaStreamSourceEcrRegion := "us-east-2"
+
 	bucketName := "prod-ds-packages-maven"
 	if clusterConfig.Stack.ValueString() != "prod" {
 		bucketName = "deltastream-packages-maven"
@@ -110,7 +112,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		}
 
 		for image := range imageMap {
-			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), cfg.Region, image)
+			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), deltaStreamSourceEcrRegion, image)
 			destImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.AccountId.ValueString(), cfg.Region, image)
 
 			destRepository := strings.Split(image, ":")[0]
