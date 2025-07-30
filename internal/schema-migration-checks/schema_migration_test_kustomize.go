@@ -175,6 +175,7 @@ func createRDSMigrationNamespace(ctx context.Context, kubeClient client.Client, 
 		}
 		return nil
 	}
+	tflog.Debug(ctx, "Namespace created", map[string]interface{}{"namespace": namespace})
 	return nil
 }
 
