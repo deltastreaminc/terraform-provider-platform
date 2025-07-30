@@ -152,6 +152,20 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, kubeClie
 
 	tflog.Debug(ctx, "Found api-server pods, proceeding with migration check")
 
+	// Check if namespace exists and delete it if it does
+	existingNs := &corev1.Namespace{}
+	nsKey := client.ObjectKey{Name: "schema-test-migrate"}
+
+	if err := kubeClient.Get(timeoutCtx, nsKey, existingNs); err == nil {
+		// Namespace exists, delete it first
+		tflog.Debug(ctx, "Namespace already exists, deleting it first", map[string]interface{}{"namespace": "schema-test-migrate"})
+		// Delete the namespace
+		if err := kubeClient.Delete(timeoutCtx, existingNs); err != nil {
+			tflog.Debug(ctx, "Failed to delete existing namespace", map[string]interface{}{"error": err.Error()})
+			return false, err
+		}
+	}
+
 	// Get deployment config
 	deploymentConfig, err := getDeploymentConfig(timeoutCtx, cfg, string(secret.Data["stack"]), string(secret.Data["infraID"]), cfg.Region, string(secret.Data["resourceID"]))
 	if err != nil {
