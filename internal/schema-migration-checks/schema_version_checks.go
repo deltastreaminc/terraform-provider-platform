@@ -12,6 +12,7 @@ import (
 
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+	sourcev1b2 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
@@ -225,6 +226,18 @@ func cleanupVersionCheckKustomization(kubeClient client.Client) error {
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
+	// Delete Kustomization
+	kustomization := &kustomizev1.Kustomization{}
+	if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, kustomization); err == nil {
+		kubeClient.Delete(cleanupCtx, kustomization)
+	}
+
+	// Delete OCI Repository
+	ociRepository := &sourcev1b2.OCIRepository{}
+	if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, ociRepository); err == nil {
+		kubeClient.Delete(cleanupCtx, ociRepository)
+	}
+
 	// Delete Jobs and Pods first
 	jobList := &batchv1.JobList{}
 	if err := kubeClient.List(cleanupCtx, jobList, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err == nil {
@@ -238,12 +251,6 @@ func cleanupVersionCheckKustomization(kubeClient client.Client) error {
 		for _, pod := range podList.Items {
 			kubeClient.Delete(cleanupCtx, &pod, client.GracePeriodSeconds(0))
 		}
-	}
-
-	// Delete Kustomization
-	kustomization := &kustomizev1.Kustomization{}
-	if err := kubeClient.Get(cleanupCtx, client.ObjectKey{Name: "schema-version-check", Namespace: "cluster-config"}, kustomization); err == nil {
-		kubeClient.Delete(cleanupCtx, kustomization)
 	}
 
 	for {

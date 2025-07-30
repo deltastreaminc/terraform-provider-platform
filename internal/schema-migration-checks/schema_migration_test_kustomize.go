@@ -10,6 +10,7 @@ import (
 
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+	sourcev1b2 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	yaml "gopkg.in/yaml.v3"
@@ -174,6 +175,7 @@ func createRDSMigrationNamespace(ctx context.Context, kubeClient client.Client, 
 		}
 		return nil
 	}
+	tflog.Debug(ctx, "Namespace created", map[string]interface{}{"namespace": namespace})
 	return nil
 }
 
@@ -183,12 +185,24 @@ func cleanupSchemaMigrationTestKustomizationandNamespace(kubeClient client.Clien
 
 	// Delete kustomization first
 	kustomization := &kustomizev1.Kustomization{}
-	kustomizationKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "schema-test-migrate"}
+	kustomizationKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "cluster-config"}
 	if err = kubeClient.Get(cleanupCtx, kustomizationKey, kustomization); err == nil {
 		if err := kubeClient.Delete(cleanupCtx, kustomization); err != nil {
 			return err
 		}
 	}
+
+	// Delete OCI Repository
+	ociRepository := &sourcev1b2.OCIRepository{}
+	ociRepositoryKey := client.ObjectKey{Name: "schema-migration-test", Namespace: "cluster-config"}
+	if err = kubeClient.Get(cleanupCtx, ociRepositoryKey, ociRepository); err == nil {
+		if err := kubeClient.Delete(cleanupCtx, ociRepository); err != nil {
+			return err
+		}
+	}
+
+	// Wait for all resources to be deleted before deleting namespace
+	time.Sleep(10 * time.Second)
 
 	// Then delete namespace
 	ns := &corev1.Namespace{}
