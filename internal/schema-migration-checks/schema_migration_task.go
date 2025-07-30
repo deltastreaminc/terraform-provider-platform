@@ -28,7 +28,7 @@ import (
 // Call before any step that might take >10 minutes.
 func refreshCredentialsForLongRunningOperation(
 	ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane,
-) (client.Client, *kubernetes.Clientset, error) {
+) (*util.RetryableClient, *kubernetes.Clientset, error) {
 	tflog.Debug(ctx, "Refreshing kube clients with new token (cache reset)")
 	util.ResetKubeClientCache()
 
@@ -40,7 +40,7 @@ func refreshCredentialsForLongRunningOperation(
 	if err != nil {
 		return nil, nil, fmt.Errorf("reinit k8s clientset: %w", err)
 	}
-	return kc.Client, ks, nil
+	return kc, ks, nil
 }
 
 // RunMigrationTestBeforeUpgrade checks if schema migration is required before upgrading the API server.
@@ -239,16 +239,16 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 		"cloud":                string(secret.Data["cloud"]),
 	}
 
+	// [REFRESH #1] — before long RDS phase (snapshot/restore/secret wait)
+	kubeClient, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	if err != nil {
+		return false, fmt.Errorf("refresh before RDS: %w", err)
+	}
+
 	// Create namespace first
 	if err := createRDSMigrationNamespace(timeoutCtx, kubeClient.Client, "schema-test-migrate"); err != nil {
 		tflog.Debug(ctx, "Failed to create namespace", map[string]interface{}{"error": err.Error()})
 		return false, err
-	}
-
-	// [REFRESH #1] — before long RDS phase (snapshot/restore/secret wait)
-	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
-	if err != nil {
-		return false, fmt.Errorf("refresh before RDS: %w", err)
 	}
 
 	// Prepare RDS for migration
@@ -264,7 +264,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	templateVarsForSchemaMigrationTest["snapshot_id"] = snapshotID
 
 	// [REFRESH #2] — before Apply (OCIRepository/Kustomization + bootstrap Flux may take several minutes to hit API)
-	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	kubeClient, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
 	if err != nil {
 		return false, fmt.Errorf("refresh before apply: %w", err)
 	}
@@ -276,7 +276,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	}
 
 	// [REFRESH #3] — before waiting for job completion (logs/status checks may take a long time)
-	kubeClient.Client, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
+	kubeClient, k8sClientset, err = refreshCredentialsForLongRunningOperation(timeoutCtx, cfg, dp)
 	if err != nil {
 		return false, fmt.Errorf("refresh before wait: %w", err)
 	}
