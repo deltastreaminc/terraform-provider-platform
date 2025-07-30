@@ -74,11 +74,11 @@ type customPresignClient struct {
 	clusterName string
 }
 
-const cacheTimeout = time.Second * 500 // must be less than X-Amz-Expires
+const cacheTimeout = time.Second * 3500 // must be less than X-Amz-Expires
 
 func (p *customPresignClient) PresignHTTP(ctx context.Context, credentials aws.Credentials, req *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) (url string, signedHeader http.Header, err error) {
 	req.Header.Add("x-k8s-aws-id", p.clusterName)
-	req.Header.Add("X-Amz-Expires", "600")
+	req.Header.Add("X-Amz-Expires", "3600")
 	return p.client.PresignHTTP(ctx, credentials, req, payloadHash, service, region, signingTime, optFns...)
 }
 
