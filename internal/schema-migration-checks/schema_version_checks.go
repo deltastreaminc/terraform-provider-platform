@@ -88,15 +88,11 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 		return
 	}
 
-	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	applyCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
 	diags := util.ApplyManifests(applyCtx, kubeClient, result)
-	if diags.HasError() {
-		for range diags {
-			// error details, but continue
-		}
-	}
+
 	return diags
 }
 

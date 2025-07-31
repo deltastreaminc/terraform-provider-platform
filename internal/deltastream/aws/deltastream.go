@@ -70,6 +70,9 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 			d.AddError("schema migration test failed", "schema migration failed")
 			return
 		}
+		// Reset kube client cache
+		tflog.Debug(ctx, "Resetting kube client cache after schema migration test")
+		util.ResetKubeClientCache()
 	}
 
 	d.Append(util.RenderAndApplyTemplate(ctx, kubeClient, "platform", platformTemplate, map[string]string{
