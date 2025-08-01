@@ -208,7 +208,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
 			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
 			"prometheusPVCStorageSize":     []byte("300Gi"), //hardcode
-			"thanosQueryMemoryLimit":       []byte("1.2Gi"), //hardcode
+			"thanosQueryMemoryLimit":       []byte("2Gi"), //hardcode
 			"thanosStoreMemoryLimit":       []byte("1.2Gi"), //hardcode
 
 			"vpcDnsIP": []byte(config.VpcDnsIP.ValueString()),
