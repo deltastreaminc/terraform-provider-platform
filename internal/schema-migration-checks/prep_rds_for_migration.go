@@ -210,8 +210,8 @@ func getDeploymentConfig(ctx context.Context, cfg aws.Config, stack, infraID, re
 	secretsClient := secretsmanager.NewFromConfig(cfg)
 
 	// Construct secret path using the same format as in deployment-config.go
-	secretPath := fmt.Sprintf("deltastream/stage/ds/%s/aws/%s/%s/deployment-config",
-		infraID, region, eksResourceID)
+	secretPath := fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config",
+		stack, infraID, region, eksResourceID)
 
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId: aws.String(secretPath),
