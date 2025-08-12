@@ -6,12 +6,12 @@ toolchain go1.24.0
 
 require (
 	github.com/alitto/pond v1.8.3
-	github.com/aws/aws-sdk-go-v2 v1.36.3
+	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.18
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.156.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.27.4
-	github.com/aws/aws-sdk-go-v2/service/eks v1.43.1
+	github.com/aws/aws-sdk-go-v2/service/eks v1.70.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.45.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.32.5
 	github.com/aws/aws-sdk-go-v2/service/rds v1.94.0
@@ -25,7 +25,6 @@ require (
 	github.com/fluxcd/kustomize-controller/api v1.2.2
 	github.com/fluxcd/notification-controller/api v1.2.4
 	github.com/fluxcd/source-controller/api v1.3.0
-	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/terraform-plugin-docs v0.19.3
 	github.com/hashicorp/terraform-plugin-framework v1.14.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.12.0
@@ -33,7 +32,6 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/sethvargo/go-retry v0.2.4
-	go.uber.org/zap v1.27.0
 	helm.sh/helm/v3 v3.17.4
 	k8s.io/api v0.32.2
 	k8s.io/apiextensions-apiserver v0.32.2
@@ -72,8 +70,8 @@ require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
@@ -83,7 +81,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kms v1.37.18
 	github.com/aws/aws-sdk-go-v2/service/sso v1.20.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.24.5 // indirect
-	github.com/aws/smithy-go v1.22.2 // indirect
+	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
