@@ -133,14 +133,15 @@ func waitKustomizations(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 			notReadyKustomizations[kustomization.Name] = ptr.Deref(meta.FindStatusCondition(kustomization.Status.Conditions, "Ready"), metav1.Condition{Message: "Not ready"}).Message
 		}
 
-		summary := "services not ready: \n"
+		var summaryMessages string
 		for k, v := range notReadyKustomizations {
-			summary += fmt.Sprintf("  |  %s: %s\n", k, v)
+			summaryMessages += fmt.Sprintf("  |  %s: %s\n", k, v)
 		}
+		summary := fmt.Sprintf("services not ready: \n%s\n", summaryMessages)
 
 		tflog.Debug(ctx, summary)
 		if len(notReadyKustomizations) > 0 {
-			return retry.RetryableError(fmt.Errorf(summary))
+			return retry.RetryableError(fmt.Errorf("%s", summary))
 		}
 		return nil
 	})

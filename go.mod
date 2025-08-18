@@ -1,8 +1,8 @@
 module github.com/deltastreaminc/terraform-provider-platform
 
-go 1.23.2
+go 1.24.0
 
-toolchain go1.24.0
+toolchain go1.24.2
 
 require (
 	github.com/alitto/pond v1.8.3
@@ -25,7 +25,6 @@ require (
 	github.com/fluxcd/kustomize-controller/api v1.2.2
 	github.com/fluxcd/notification-controller/api v1.2.4
 	github.com/fluxcd/source-controller/api v1.3.0
-	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/terraform-plugin-docs v0.19.3
 	github.com/hashicorp/terraform-plugin-framework v1.14.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.12.0
@@ -33,7 +32,6 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/sethvargo/go-retry v0.2.4
-	go.uber.org/zap v1.27.0
 	helm.sh/helm/v3 v3.17.4
 	k8s.io/api v0.32.2
 	k8s.io/apiextensions-apiserver v0.32.2
@@ -248,11 +246,11 @@ require (
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/mod v0.21.0 // indirect
+	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
+	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
