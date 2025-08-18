@@ -110,18 +110,25 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 		enableKoalaTracking = "true"
 	}
 
+	cloudImagRegistry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", config.AccountId.ValueString(), cfg.Region)
+	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
+	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-bundle-pem", strings.ToLower(cfg.Region))
+
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
 			"meshID": []byte("deltastream"),
 			// todo remove duplicate properties
-			"stack":             []byte(config.Stack.ValueString()),
-			"environment":       []byte(config.Stack.ValueString()),
-			"cloud":             []byte("aws"),
-			"region":            []byte(cfg.Region),
-			"topology":          []byte("ds"),
-			"dsEcrAccountID":    []byte(config.AccountId.ValueString()),
-			"execEngineVersion": []byte(execEngineVersion),
+			"stack":                []byte(config.Stack.ValueString()),
+			"environment":          []byte(config.Stack.ValueString()),
+			"cloud":                []byte("aws"),
+			"region":               []byte(cfg.Region),
+			"topology":             []byte("ds"),
+			"dsEcrAccountID":       []byte(config.AccountId.ValueString()),
+			"cloudImageRegistry":   []byte(cloudImagRegistry),
+			"deployConfigSecret":   []byte(deployConfigSecret),
+			"rdsCACertsBundleName": []byte(rdsCACertsRegionalBundleName),
+			"execEngineVersion":    []byte(execEngineVersion),
 			// todo remove duplicate properties
 			"awsAccountID":                     []byte(config.AccountId.ValueString()),
 			"infraAccountID":                   []byte(fmt.Sprintf("\"%s\"", config.AccountId.ValueString())),
@@ -208,7 +215,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
 			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
 			"prometheusPVCStorageSize":     []byte("300Gi"), //hardcode
-			"thanosQueryMemoryLimit":       []byte("2Gi"), //hardcode
+			"thanosQueryMemoryLimit":       []byte("2Gi"),   //hardcode
 			"thanosStoreMemoryLimit":       []byte("1.2Gi"), //hardcode
 
 			"vpcDnsIP": []byte(config.VpcDnsIP.ValueString()),
