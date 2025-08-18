@@ -141,7 +141,7 @@ func waitKustomizations(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 
 		tflog.Debug(ctx, summary)
 		if len(notReadyKustomizations) > 0 {
-			return retry.RetryableError(fmt.Errorf(summary))
+			return retry.RetryableError(fmt.Errorf("%s", summary))
 		}
 		return nil
 	})
