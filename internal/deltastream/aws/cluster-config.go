@@ -114,6 +114,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-bundle-pem", strings.ToLower(cfg.Region))
 
+	hashicorpVaultKeyName := strings.ToLower(fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/vault", config.Stack.ValueString(), config.InfraId.ValueString(), cfg.Region))
+
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
@@ -138,7 +140,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"enableKoalaTracking":              []byte(`"` + enableKoalaTracking + `"`),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
-			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
+			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueStringf
 			"nodepoolCapacityType":             []byte(config.NodepoolCapacityType.ValueString()),
 			"nodepoolInstanceTypes":            []byte(`["` + strings.Join(nodepoolInstanceTypes, `","`) + `"]`),
 			"nodepoolCpuLimit":                 []byte(fmt.Sprintf("%d", config.NodepoolCpuLimit.ValueInt32())),
@@ -165,6 +167,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"mviewStoreType":                   []byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"vaultInitRoleARN":                 []byte(config.VaultInitRoleArn.ValueString()),
+		    "hashicorpVaultKeyName":            []byte(hashicorpVaultKeyName),
 			"lokiRoleARN":                      []byte(config.LokiRoleArn.ValueString()),
 			"tempoRoleARN":                     []byte(config.TempoRoleArn.ValueString()),
 			"thanosStoreGatewayRoleARN":        []byte(config.ThanosStoreGatewayRoleArn.ValueString()),
