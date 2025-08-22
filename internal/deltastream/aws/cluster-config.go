@@ -140,7 +140,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"enableKoalaTracking":              []byte(`"` + enableKoalaTracking + `"`),
 			"resourceID":                       []byte(config.EksResourceId.ValueString()),
 			"clusterName":                      []byte(*cluster.Name),
-			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueStringf
+			"cpuArchitecture":                  []byte(config.CpuArchitecture.ValueString()),
 			"nodepoolCapacityType":             []byte(config.NodepoolCapacityType.ValueString()),
 			"nodepoolInstanceTypes":            []byte(`["` + strings.Join(nodepoolInstanceTypes, `","`) + `"]`),
 			"nodepoolCpuLimit":                 []byte(fmt.Sprintf("%d", config.NodepoolCpuLimit.ValueInt32())),
