@@ -36,7 +36,20 @@ const deploymentConfigTmpl = `
     "username": "deprecated_use_secret",
     "password": "deprecated_use_secret",
     "credentialAwsSecret" : "{{ .RdsControlPlaneCreds.AwsSecretName}}",
+    "credentialSecret" : "{{ .RdsControlPlaneCreds.AwsSecretName}}",
     "database": "{{ .RdsControlPlaneConfig.Database }}",
+	"authType": "password",
+    "sslMode": "verify-full",
+    "host": "{{ .RdsControlPlaneConfig.Host }}",
+    "port": {{ .RdsControlPlaneConfig.Port }}
+  },
+  "vaultPostgres": {
+    "username": "vault_user_{{ .InfraID }}",
+    "password": "",
+    "credentialAwsSecret" : "",
+    "credentialSecret" : "",
+    "database": "vault_backend_{{ .InfraID }}",
+	"authType": "iam",
     "sslMode": "verify-full",
     "host": "{{ .RdsControlPlaneConfig.Host }}",
     "port": {{ .RdsControlPlaneConfig.Port }}
@@ -159,6 +172,8 @@ const deploymentConfigTmpl = `
     "username": "deprecated_use_secret",
     "password": "deprecated_use_secret",
     "credentialAwsSecret" : "{{ .MaterializedViewRdsCreds.AwsSecretName}}",
+	"credentialSecret" : "{{ .MaterializedViewRdsCreds.AwsSecretName}}",
+    "authType": "password",
     "database": "{{ .MaterializedViewRdsConfig.Database }}",
     "sslMode": "verify-full",
     "host": "{{ .MaterializedViewRdsConfig.Host }}",
@@ -411,6 +426,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
 		"AccountID":                  config.AccountId.ValueString(),
+		"InfraID":                    config.InfraId.ValueString(),
 		"Region":                     cfg.Region,
 		"TopicReplicas":              topicReplicas,
 		"KmsKeyId":                   config.KmsKeyId.ValueString(),
