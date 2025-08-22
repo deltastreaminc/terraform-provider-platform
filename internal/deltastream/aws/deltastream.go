@@ -49,6 +49,11 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 		return
 	}
 
+	d.Append(UpdateVaultUserSecret(ctx, cfg, dp)...)
+	if d.HasError() {
+		return
+	}
+
 	d.Append(util.RenderAndApplyTemplate(ctx, kubeClient, "flux", fluxManifestTemplate, map[string]string{
 		"EksReaderRoleArn": clusterConfig.EcrReadonlyRoleArn.ValueString(),
 		"Region":           cfg.Region,
