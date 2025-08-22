@@ -553,13 +553,13 @@ func UpdateVaultUserSecret(ctx context.Context, cfg aws.Config, dp awsconfig.AWS
 	return
 }
 
-// get deployment config secret name, note that the Deployment IAM Role only have permission to create secret with this specific naming convention
+// get deployment config secret name, note that the Deployment IAM Role only have permission to create secret with a specific naming convention
 // example: deltastream/prod/ds/123456789012/aws/us-west-2/eks-abcdef/deployment-config
 func calcDeploymentConfigSecretName(config awsconfig.ClusterConfiguration, region string) string {
 	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
 }
 
-// get vault user secret name, note that the Deployment IAM Role only have permission to create secret with this specific naming convention
+// get vault user secret name, note that the Deployment IAM Role only have permission to create secret with a specific naming convention
 // example: deltastream/prod/ds/123456789012/aws/us-west-2/eks-abcdef/deployment-config-vault-user
 func calcVaultUserSecretName(config awsconfig.ClusterConfiguration, region string) string {
 	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config-vault-user", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
