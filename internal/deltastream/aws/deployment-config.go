@@ -44,10 +44,10 @@ const deploymentConfigTmpl = `
     "port": {{ .RdsControlPlaneConfig.Port }}
   },
   "vaultPostgres": {
-    "username": "vault_user_{{ .InfraID }}",
-    "password": "",
-    "credentialAwsSecret" : "",
-    "credentialSecret" : "",
+    "username": "deprecated_use_secret",
+    "password": "deprecated_use_secret",
+    "credentialAwsSecret" : "{{ .VaultUserExternalSecretName }}",
+    "credentialSecret" : "{{ .VaultUserExternalSecretName }}",
     "database": "vault_backend_{{ .InfraID }}",
 	"authType": "iam",
     "sslMode": "verify-full",
@@ -427,6 +427,7 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	err = tmpl.Execute(&buf, map[string]any{
 		"AccountID":                  config.AccountId.ValueString(),
 		"InfraID":                    config.InfraId.ValueString(),
+		"VaultUserExternalSecretName": calcVaultUserSecretName(config, cfg.Region),
 		"Region":                     cfg.Region,
 		"TopicReplicas":              topicReplicas,
 		"KmsKeyId":                   config.KmsKeyId.ValueString(),
@@ -505,6 +506,61 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	return
 }
 
+// Setup vault postgres user secret with username as vault_user_{{infraID}}
+// Note that password will be empty as vault user is using RDS IAM for authentication
+func UpdateVaultUserSecret(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (diags diag.Diagnostics) {
+	config, dg := dp.ClusterConfigurationData(ctx)
+	diags.Append(dg...)
+	if diags.HasError() {
+		return
+	}
+
+	secretsmanagerClient := secretsmanager.NewFromConfig(cfg)
+	vaultUserSecretName := calcVaultUserSecretName(config, cfg.Region)
+	vaultUserSecretValue := fmt.Sprintf(`{"username": "vault_user_%s", "password": ""}`, config.InfraId.ValueString())
+
+	if _, err := secretsmanagerClient.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
+		SecretId: aws.String(vaultUserSecretName),
+	}); err != nil {
+		var resourceNotFoundException *types.ResourceNotFoundException
+		if errors.As(err, &resourceNotFoundException) {
+			if _, err = secretsmanagerClient.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+				Name:         ptr.To(vaultUserSecretName),
+				SecretString: ptr.To(vaultUserSecretValue),
+				Tags: []types.Tag{
+					{Key: ptr.To("deltastream-io-region"), Value: ptr.To(cfg.Region)},
+					{Key: ptr.To("deltastream-io-env"), Value: ptr.To(config.Stack.ValueString())},
+					{Key: ptr.To("deltastream-io-name"), Value: ptr.To("ds-" + config.InfraId.ValueString())},
+				},
+			}); err != nil {
+				diags.AddError("unable to create vault user secret "+vaultUserSecretName, err.Error())
+				return
+			}
+		} else {
+			diags.AddError("unable to describe vault user secret "+vaultUserSecretName, err.Error())
+			return
+		}
+	} else {
+		if _, err = secretsmanagerClient.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
+			SecretId:     ptr.To(vaultUserSecretName),
+			SecretString:  ptr.To(vaultUserSecretValue),
+		}); err != nil {
+			diags.AddError("unable to update vault user secret "+vaultUserSecretName, err.Error())
+			return
+		}
+	}
+
+	return
+}
+
+// get deployment config secret name, note that the Deployment IAM Role only have permission to create secret with this specific naming convention
+// example: deltastream/prod/ds/123456789012/aws/us-west-2/eks-abcdef/deployment-config
 func calcDeploymentConfigSecretName(config awsconfig.ClusterConfiguration, region string) string {
 	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
+}
+
+// get vault user secret name, note that the Deployment IAM Role only have permission to create secret with this specific naming convention
+// example: deltastream/prod/ds/123456789012/aws/us-west-2/eks-abcdef/deployment-config-vault-user
+func calcVaultUserSecretName(config awsconfig.ClusterConfiguration, region string) string {
+	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config-vault-user", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
 }

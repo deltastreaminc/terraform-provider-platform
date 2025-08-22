@@ -402,6 +402,14 @@ func cleanup(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (d 
 		d.AddError("failed to delete secret", err.Error())
 		return
 	}
+	tflog.Debug(ctx, "Delete vautl user secret")
+	if _, err := secretsClient.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
+		SecretId:                   ptr.To(calcVaultUserSecretName(clusterCfg, cfg.Region)),
+		ForceDeleteWithoutRecovery: ptr.To(true),
+	}); err != nil {
+		d.AddError("failed to delete vault user secret", err.Error())
+		return
+	}
 
 	return
 }
