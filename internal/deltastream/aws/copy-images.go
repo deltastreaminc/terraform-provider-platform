@@ -38,6 +38,8 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		return
 	}
 
+    // use a single ECR region to save on cost of replicating to all region
+	dsSourceImageAccountRegion := "us-east-2"
 	bucketName := "prod-ds-packages-maven"
 	if clusterConfig.Stack.ValueString() != "prod" {
 		bucketName = "deltastream-packages-maven"
@@ -77,7 +79,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 	}
 
 	// Create an Amazon ECR service client
-	client := ecr.NewFromConfig(cfg)
+	destEcrClient := ecr.NewFromConfig(cfg)
 
 	authTokenOut, err := client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
@@ -90,7 +92,29 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		d.AddError("error decoding authorization token", err.Error())
 		return
 	}
-	imageCredContext := &types.SystemContext{
+	imageDestCredContext := &types.SystemContext{
+		DockerAuthConfig: &types.DockerAuthConfig{
+			Username: "AWS",
+			Password: strings.TrimPrefix(string(tokenBytes), "AWS:"),
+		},
+	}
+
+	// Create an Amazon ECR service client
+	srcEcrClient := ecr.NewFromConfig(cfg)
+    # TODO update cfg to be = us-east-2
+
+	authTokenOut, err = client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	if err != nil {
+		d.AddError("error getting authorization token", err.Error())
+		return
+	}
+
+	tokenBytes, err = base64.StdEncoding.DecodeString(*authTokenOut.AuthorizationData[0].AuthorizationToken)
+	if err != nil {
+		d.AddError("error decoding authorization token", err.Error())
+		return
+	}
+	imageSrcCredContext := &types.SystemContext{
 		DockerAuthConfig: &types.DockerAuthConfig{
 			Username: "AWS",
 			Password: strings.TrimPrefix(string(tokenBytes), "AWS:"),
@@ -108,8 +132,6 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		for _, image := range imageList.Images {
 			imageMap[image] = true
 		}
-		// use a single ECR region to save on cost of replicating to all region
-		dsSourceImageAccountRegion := "us-east-2"
 
 		for image := range imageMap {
 			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), dsSourceImageAccountRegion, image)
@@ -142,7 +164,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 			}
 
 			group.Submit(func() {
-				err = copyImage(ctx, imageCredContext, sourceImage, destImage)
+				err = copyImage(ctx, imageSrcCredContext, imageDestCredContext, sourceImage, destImage)
 				if err != nil {
 					d.AddError("error copying image", err.Error())
 					return
