@@ -108,9 +108,11 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		for _, image := range imageList.Images {
 			imageMap[image] = true
 		}
+		// use a single ECR region to save on cost of replicating to all region
+		dsSourceImageAccountRegion := "us-east-2"
 
 		for image := range imageMap {
-			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), cfg.Region, image)
+			sourceImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.DsAccountId.ValueString(), dsSourceImageAccountRegion, image)
 			destImage := fmt.Sprintf("//%s.dkr.ecr.%s.amazonaws.com/%s", clusterConfig.AccountId.ValueString(), cfg.Region, image)
 
 			destRepository := strings.Split(image, ":")[0]
