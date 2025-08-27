@@ -38,7 +38,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		return
 	}
 
-    // use a single ECR region to save on cost of replicating to all region
+	// use a single ECR region to save on cost of replicating to all region
 	dsSourceImageAccountRegion := "us-east-2"
 	bucketName := "prod-ds-packages-maven"
 	if clusterConfig.Stack.ValueString() != "prod" {
@@ -78,46 +78,49 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 		return
 	}
 
-	// Create an Amazon ECR service client
+	// Create an Amazon ECR service client for destination region
 	destEcrClient := ecr.NewFromConfig(cfg)
 
-	authTokenOut, err := client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	// Get authorization token for destination region
+	destAuthTokenOut, err := destEcrClient.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-		d.AddError("error getting authorization token", err.Error())
+		d.AddError("error getting authorization token for destination", err.Error())
 		return
 	}
 
-	tokenBytes, err := base64.StdEncoding.DecodeString(*authTokenOut.AuthorizationData[0].AuthorizationToken)
+	destTokenBytes, err := base64.StdEncoding.DecodeString(*destAuthTokenOut.AuthorizationData[0].AuthorizationToken)
 	if err != nil {
-		d.AddError("error decoding authorization token", err.Error())
+		d.AddError("error decoding authorization token for destination", err.Error())
 		return
 	}
 	imageDestCredContext := &types.SystemContext{
 		DockerAuthConfig: &types.DockerAuthConfig{
 			Username: "AWS",
-			Password: strings.TrimPrefix(string(tokenBytes), "AWS:"),
+			Password: strings.TrimPrefix(string(destTokenBytes), "AWS:"),
 		},
 	}
 
-	// Create an Amazon ECR service client
-	srcEcrClient := ecr.NewFromConfig(cfg)
-    # TODO update cfg to be = us-east-2
+	// Create an Amazon ECR service client for source region (us-east-2)
+	sourceCfg := cfg.Copy()
+	sourceCfg.Region = "us-east-2"
+	srcEcrClient := ecr.NewFromConfig(sourceCfg)
 
-	authTokenOut, err = client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	// Get authorization token for source region (us-east-2)
+	srcAuthTokenOut, err := srcEcrClient.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-		d.AddError("error getting authorization token", err.Error())
+		d.AddError("error getting authorization token for source", err.Error())
 		return
 	}
 
-	tokenBytes, err = base64.StdEncoding.DecodeString(*authTokenOut.AuthorizationData[0].AuthorizationToken)
+	srcTokenBytes, err := base64.StdEncoding.DecodeString(*srcAuthTokenOut.AuthorizationData[0].AuthorizationToken)
 	if err != nil {
-		d.AddError("error decoding authorization token", err.Error())
+		d.AddError("error decoding authorization token for source", err.Error())
 		return
 	}
 	imageSrcCredContext := &types.SystemContext{
 		DockerAuthConfig: &types.DockerAuthConfig{
 			Username: "AWS",
-			Password: strings.TrimPrefix(string(tokenBytes), "AWS:"),
+			Password: strings.TrimPrefix(string(srcTokenBytes), "AWS:"),
 		},
 	}
 
@@ -139,7 +142,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 
 			destRepository := strings.Split(image, ":")[0]
 			// check if image exist in destination account, if not then create it
-			_, err := client.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
+			_, err := destEcrClient.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
 				RepositoryNames: []string{destRepository},
 			})
 			if err != nil {
@@ -148,7 +151,7 @@ func copyImages(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) 
 					d.AddError(fmt.Sprintf("error copying image, unable to describe repository %s in destination registry", destRepository), err.Error())
 					return
 				} else {
-					_, err = client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
+					_, err = destEcrClient.CreateRepository(ctx, &ecr.CreateRepositoryInput{
 						RepositoryName:     ptr.To(destRepository),
 						ImageTagMutability: ecrtypes.ImageTagMutabilityMutable,
 						Tags: []ecrtypes.Tag{
@@ -221,7 +224,7 @@ type imgBlob struct {
 	totalBytes  float64
 }
 
-func copyImage(ctx context.Context, credContext *types.SystemContext, sourceImage, destImage string) (err error) {
+func copyImage(ctx context.Context, srcCredContext, destCredContext *types.SystemContext, sourceImage, destImage string) (err error) {
 	tflog.Debug(ctx, "copying image", map[string]any{
 		"source": sourceImage,
 		"dest":   destImage,
@@ -282,8 +285,8 @@ func copyImage(ctx context.Context, credContext *types.SystemContext, sourceImag
 
 	err = retry.Do(ctx, retry.WithMaxRetries(20, retry.NewExponential(time.Second*5)), func(ctx context.Context) error {
 		_, err := copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
-			SourceCtx:          credContext,
-			DestinationCtx:     credContext,
+			SourceCtx:          srcCredContext,
+			DestinationCtx:     destCredContext,
 			ReportWriter:       b,
 			Progress:           progressChan,
 			ProgressInterval:   time.Second * 10,
