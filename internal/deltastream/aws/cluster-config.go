@@ -178,6 +178,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"karpenterRoleName":                []byte(config.KarpenterNodeRoleName.ValueString()),
 			"karpenterIrsaARN":                 []byte(config.KarpenterIrsaRoleArn.ValueString()),
 			"storeProxyRoleARN":                []byte(config.StoreProxyRoleArn.ValueString()),
+			"sqlStoreProxyRoleARN":             []byte(config.SqlStoreProxyRoleArn.ValueString()),
 			"queryServiceRoleARN":              []byte(config.QueryServiceRoleArn.ValueString()),
 			"interruptionQueueName":            []byte(config.InterruptionQueueName.ValueString()),
 			"cw2lokiRoleARN":                   []byte(config.Cw2LokiRoleArn.ValueString()),
