@@ -60,9 +60,7 @@ const deploymentConfigTmpl = `
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
     "topicReplicas": {{ .TopicReplicas }},
-    "region": "{{ .Region }}",
-    "roleARN": "{{ .KafkaRoleARN }}",
-    "externalID": "{{ .KafkaRoleExternalId }}"
+    "region": "{{ .Region }}"
   },
   "cpKafka": {
     "hosts": "{{ .KafkaBrokerList }}",
