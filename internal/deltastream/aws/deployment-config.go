@@ -59,6 +59,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
+	"authType": "iam",
     "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}"
   },
@@ -182,6 +183,7 @@ const deploymentConfigTmpl = `
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
     "brokerListenerPorts": "{{ .KafkaBrokerListenerPorts }}",
     "enableTLS": true,
+	"authType": "iam",
     "topicReplicas": {{ .TopicReplicas }},
     "region": "{{ .Region }}",
     "roleARN": "{{ .KafkaRoleARN }}",
