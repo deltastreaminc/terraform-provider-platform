@@ -61,7 +61,9 @@ const deploymentConfigTmpl = `
     "enableTLS": true,
 	"authType": "iam",
     "topicReplicas": {{ .TopicReplicas }},
-    "region": "{{ .Region }}"
+    "region": "{{ .Region }}",
+    "roleARN": "{{ .KafkaRoleARN }}",
+    "externalID": "{{ .KafkaRoleExternalId }}"
   },
   "cpKafka": {
     "hosts": "{{ .KafkaBrokerList }}",
