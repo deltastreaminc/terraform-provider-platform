@@ -232,6 +232,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 		"namespace":            "schema-test-migrate",
 		"test_rds_schema_user": fmt.Sprintf("schematestuser%s", time.Now().Format("01021504")),
 		"rdsCACertsSecret":     string(secret.Data["rdsCACertsSecret"]),
+		"rdsCACertsBundleName": string(secret.Data["rdsCACertsBundleName"]),
 		"infraID":              string(secret.Data["infraID"]),
 		"resourceID":           string(secret.Data["resourceID"]),
 		"stack":                string(secret.Data["stack"]),

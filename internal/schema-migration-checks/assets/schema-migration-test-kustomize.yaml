@@ -34,6 +34,7 @@ spec:
     substitute:
       test_rds_host: {{ .test_pg_host }}
       rdsCACertsSecret: {{ .rdsCACertsSecret }}
+      rdsCACertsBundleName: {{ .rdsCACertsBundleName }}
       test_rds_master_externalsecret: {{ .test_rds_master_externalsecret }}
       stack: {{ .stack }}
       infraID: {{ .infraID }}
