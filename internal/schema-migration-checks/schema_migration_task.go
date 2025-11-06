@@ -238,6 +238,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 		"stack":                string(secret.Data["stack"]),
 		"topology":             string(secret.Data["topology"]),
 		"cloud":                string(secret.Data["cloud"]),
+		"cloudImageRegistry":   string(secret.Data["cloudImageRegistry"]),
 		"deployConfigSecret":   string(secret.Data["deployConfigSecret"]),
 	}
 
