@@ -237,6 +237,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 		"stack":                string(secret.Data["stack"]),
 		"topology":             string(secret.Data["topology"]),
 		"cloud":                string(secret.Data["cloud"]),
+		"deployConfigSecret":   string(secret.Data["deployConfigSecret"]),
 	}
 
 	// [REFRESH #1] — before long RDS phase (snapshot/restore/secret wait)
