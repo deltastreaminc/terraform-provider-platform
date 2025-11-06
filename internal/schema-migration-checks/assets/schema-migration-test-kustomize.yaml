@@ -45,3 +45,4 @@ spec:
       dsEcrAccountID: "{{ .DsEcrAccountID }}"
       apiServerNewVersion: "{{ .ApiServerNewVersion }}"
       test_rds_schema_user: "{{ .test_rds_schema_user }}"
+      deployConfigSecret: "{{ .deployConfigSecret }}"
