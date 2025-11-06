@@ -47,3 +47,4 @@ spec:
       apiServerNewVersion: "{{ .ApiServerNewVersion }}"
       test_rds_schema_user: "{{ .test_rds_schema_user }}"
       deployConfigSecret: "{{ .deployConfigSecret }}"
+      cloudImageRegistry: "{{ .DsEcrAccountID }}.dkr.ecr.{{ .Region }}.amazonaws.com"
