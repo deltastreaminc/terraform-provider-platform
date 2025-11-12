@@ -66,6 +66,11 @@ func restartNodes(ctx context.Context, dp awsconfig.AWSDataplane, kubeClient *ut
 		}
 		tflog.Debug(ctx, "found instances in node group", map[string]any{"nodegroup": nodegroupName, "instances": instanceIDs})
 
+		if len(instanceIDs) == 0 {
+			tflog.Debug(ctx, "there are no instances running for a nodegroup", map[string]any{"nodegroup": nodegroupName})
+			continue
+		}
+
 		_, err := ec2Client.RebootInstances(ctx, &ec2.RebootInstancesInput{
 			InstanceIds: instanceIDs,
 		})
