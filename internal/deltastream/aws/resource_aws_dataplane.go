@@ -69,16 +69,16 @@ func (d *AWSDataplaneResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	// copy images
-	execEngineVersion, copyImageDiagnostics := copyImages(ctx, cfg, dp)
-	resp.Diagnostics.Append(copyImageDiagnostics...)
+	
+	updateIamRoleOIDC := updateIamRolesOIDC(ctx, cfg, dp)
+	resp.Diagnostics.Append(updateIamRoleOIDC...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	updateIamRoleOIDC := updateIamRolesOIDC(ctx, cfg, dp)
-	resp.Diagnostics.Append(updateIamRoleOIDC...)
+	// copy images
+	execEngineVersion, copyImageDiagnostics := copyImages(ctx, cfg, dp)
+	resp.Diagnostics.Append(copyImageDiagnostics...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -183,16 +183,16 @@ func (d *AWSDataplaneResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	// copy images
-	execEngineVersion, copyImageDiagnostics := copyImages(ctx, cfg, newDp)
-	resp.Diagnostics.Append(copyImageDiagnostics...)
+	// update role OIDC trust relationship for any IRSA roles
+	updateIamRoleOIDC := updateIamRolesOIDC(ctx, cfg, newDp)
+	resp.Diagnostics.Append(updateIamRoleOIDC...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// update role OIDC trust relationship for any IRSA roles
-	updateIamRoleOIDC := updateIamRolesOIDC(ctx, cfg, newDp)
-	resp.Diagnostics.Append(updateIamRoleOIDC...)
+	// copy images
+	execEngineVersion, copyImageDiagnostics := copyImages(ctx, cfg, newDp)
+	resp.Diagnostics.Append(copyImageDiagnostics...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
