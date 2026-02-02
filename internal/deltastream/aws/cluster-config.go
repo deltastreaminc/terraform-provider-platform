@@ -128,6 +128,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"topology":             []byte("ds"),
 			"dsEcrAccountID":       []byte(config.AccountId.ValueString()),
 			"cloudImageRegistry":   []byte(cloudImagRegistry),
+			"ociCloudImageRegistry": []byte(cloudImagRegistry),
 			"deployConfigSecret":   []byte(deployConfigSecret),
 			"rdsCACertsBundleName": []byte(rdsCACertsRegionalBundleName),
 			"execEngineVersion":    []byte(execEngineVersion),
