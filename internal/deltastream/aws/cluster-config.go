@@ -116,22 +116,26 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 
 	hashicorpVaultKeyName := strings.ToLower(fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/vault", config.Stack.ValueString(), config.InfraId.ValueString(), cfg.Region))
 
+	pgWireHostPort := 5432
+	if !config.PgWireHostPort.IsNull() && config.PgWireHostPort.ValueInt64() > 0 {
+		pgWireHostPort = int(config.PgWireHostPort.ValueInt64())
+	}
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
 			"meshID": []byte("deltastream"),
 			// todo remove duplicate properties
-			"stack":                []byte(config.Stack.ValueString()),
-			"environment":          []byte(config.Stack.ValueString()),
-			"cloud":                []byte("aws"),
-			"region":               []byte(cfg.Region),
-			"topology":             []byte("ds"),
-			"dsEcrAccountID":       []byte(config.AccountId.ValueString()),
-			"cloudImageRegistry":   []byte(cloudImagRegistry),
+			"stack":                 []byte(config.Stack.ValueString()),
+			"environment":           []byte(config.Stack.ValueString()),
+			"cloud":                 []byte("aws"),
+			"region":                []byte(cfg.Region),
+			"topology":              []byte("ds"),
+			"dsEcrAccountID":        []byte(config.AccountId.ValueString()),
+			"cloudImageRegistry":    []byte(cloudImagRegistry),
 			"ociCloudImageRegistry": []byte(cloudImagRegistry),
-			"deployConfigSecret":   []byte(deployConfigSecret),
-			"rdsCACertsBundleName": []byte(rdsCACertsRegionalBundleName),
-			"execEngineVersion":    []byte(execEngineVersion),
+			"deployConfigSecret":    []byte(deployConfigSecret),
+			"rdsCACertsBundleName":  []byte(rdsCACertsRegionalBundleName),
+			"execEngineVersion":     []byte(execEngineVersion),
 			// todo remove duplicate properties
 			"awsAccountID":                     []byte(config.AccountId.ValueString()),
 			"infraAccountID":                   []byte(fmt.Sprintf("\"%s\"", config.AccountId.ValueString())),
@@ -168,7 +172,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"mviewStoreType":                   []byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
 			"vaultInitRoleARN":                 []byte(config.VaultInitRoleArn.ValueString()),
-		    "hashicorpVaultKeyName":            []byte(hashicorpVaultKeyName),
+			"hashicorpVaultKeyName":            []byte(hashicorpVaultKeyName),
 			"lokiRoleARN":                      []byte(config.LokiRoleArn.ValueString()),
 			"tempoRoleARN":                     []byte(config.TempoRoleArn.ValueString()),
 			"thanosStoreGatewayRoleARN":        []byte(config.ThanosStoreGatewayRoleArn.ValueString()),
@@ -209,6 +213,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"consoleHostname":            []byte(config.ConsoleHostname.ValueString()),
 			"consoleV2Hostname":          []byte(config.ConsoleHostname.ValueString()),
 			"downloadsHostname":          []byte(config.DownloadsHostname.ValueString()),
+			"pgwireHostname":             []byte(config.PgWireHostname.ValueString()),
+			"pgwirePort":                 []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
+			"pgwireExternalEndpoint":     []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
 			"platformVersion":            []byte(config.ProductVersion.ValueString()),
 			"apiEndpointSubnet":          []byte(config.ApiSubnetMode.ValueString()),
 			"apiTlsTermination":          []byte(config.ApiTlsMode.ValueString()),

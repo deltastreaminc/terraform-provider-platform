@@ -86,6 +86,7 @@ Required:
 - `o11y_tls_mode` (String) The TLS/HTTPS mode for observability endpoint.
 - `orb_billing_bucket` (String) The S3 bucket for storing billing data.
 - `orb_billing_bucket_region` (String) The S3 bucket region for storing billing data.
+- `pg_wire_host_name` (String) The hostname of the DeltaStream postgres endpoint
 - `private_link_subnets_ids` (List of String) The private subnet IDs of the private links from dataplane VPC.
 - `private_subnet_ids` (List of String) The private subnet IDs hosting nodes for this cluster.
 - `product_artifacts_bucket` (String) The S3 bucket for storing DeltaStream product artifacts.
@@ -102,7 +103,8 @@ Required:
 - `rds_mviews_resource_id` (String) The resource ID of the RDS mviews instance for storing Materialized views data.
 - `rds_mviews_using_aurora` (Boolean) Flag to indicate rds for mviews is aurora cluster.
 - `serde_bucket` (String) The S3 bucket for storing SERDE artifacts.
-- `store_proxy_role_arn` (String) The ARN of the role to assume to facilitate connection to customer stores.
+- `sql_store_proxy_role_arn` (String) The ARN of the role to facilitate connection to customer SQL type stores.
+- `store_proxy_role_arn` (String) The ARN of the role to facilitate connection to customer stores.
 - `tempo_role_arn` (String) The ARN of the role to assume for managing Tempo resources.
 - `thanos_sidecar_role_arn` (String) The ARN of the role to assume for managing Thanos sidecar resources.
 - `thanos_store_bucket_role_arn` (String) The ARN of the role to assume for managing Thanos store bucket resources.
@@ -128,6 +130,7 @@ Optional:
 - `image_build_credentials_secret` (String) The name of the secret containing image builder credentials.
 - `o11y_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to obervability endpoint load balancer.
 - `o11y_tls_certificate_arn` (String) The ARN of the TLS certificate for the observability endpoint.
+- `pg_wire_host_port` (Number) Deltastream pgwire protocol port
 - `rds_mviews_database_name` (String) RDS MViews postgres database name for deltastream
 - `rds_mviews_host_name` (String) RDS MViews host name
 - `rds_mviews_host_port` (Number) RDS MViews host name

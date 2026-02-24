@@ -141,6 +141,8 @@ type ClusterConfiguration struct {
 
 	ConsoleHostname                     basetypes.StringValue `tfsdk:"console_hostname"`
 	DownloadsHostname                   basetypes.StringValue `tfsdk:"downloads_hostname"`
+	PgWireHostname                      basetypes.StringValue `tfsdk:"pg_wire_host_name"`
+	PgWireHostPort                      basetypes.Int64Value  `tfsdk:"pg_wire_host_port"`
 	RdsCACertsSecret                    basetypes.StringValue `tfsdk:"rds_ca_certs_secret"`
 	RdsControlPlaneMasterPasswordSecret basetypes.StringValue `tfsdk:"rds_control_plane_master_password_secret"`
 	RdsControlPlaneDatabaseName         basetypes.StringValue `tfsdk:"rds_control_plane_database_name"`
@@ -592,6 +594,17 @@ var Schema = schema.Schema{
 					Description: "The hostname of the DeltaStream downloads",
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[a-zA-Z0-9-\.]+\.[a-zA-Z]{2,}$`), "Invalid hostname")},
+				},
+
+				"pg_wire_host_name": schema.StringAttribute{
+					Description: "The hostname of the DeltaStream postgres endpoint",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[a-zA-Z0-9-\.]+\.[a-zA-Z]{2,}$`), "Invalid hostname")},
+				},
+
+				"pg_wire_host_port": schema.Int64Attribute{
+					Description: "Deltastream pgwire protocol port",
+					Optional:    true,
 				},
 
 				"rds_ca_certs_secret": schema.StringAttribute{
