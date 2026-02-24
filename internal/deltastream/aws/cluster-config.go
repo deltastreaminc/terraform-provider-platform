@@ -213,6 +213,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"consoleHostname":            []byte(config.ConsoleHostname.ValueString()),
 			"consoleV2Hostname":          []byte(config.ConsoleHostname.ValueString()),
 			"downloadsHostname":          []byte(config.DownloadsHostname.ValueString()),
+			"pgwireHostname":             []byte(config.PgWireHostname.ValueString()),
+			"pgwirePort":                 []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
 			"pgwireExternalEndpoint":     []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
 			"platformVersion":            []byte(config.ProductVersion.ValueString()),
 			"apiEndpointSubnet":          []byte(config.ApiSubnetMode.ValueString()),
