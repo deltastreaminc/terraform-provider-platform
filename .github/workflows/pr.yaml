@@ -29,7 +29,7 @@ jobs:
       - name: Setup Flux CLI
         uses: fluxcd/flux2/action@main
         with:
-          version: 'latest'
+          version: 'v2.7.5'
 
       - name: Install gpgme # dep of github.com/containers/image/v5/signature
         run: sudo apt-get install -y libgpgme-dev
