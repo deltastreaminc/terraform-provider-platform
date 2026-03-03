@@ -24,7 +24,7 @@ import (
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
 
-//go:embed assets/cilium-1.16.1.tgz
+//go:embed assets/cilium-1.18.6.tgz
 var ciliumChart []byte
 
 //go:embed assets/cilium-values.yaml.tmpl
