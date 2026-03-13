@@ -168,6 +168,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"debeziumRoleARN":                  []byte(config.DebeziumRoleArn.ValueString()),
 			"externalSecretsRoleARN":           []byte(config.AwsSecretsManagerRoRoleARN.ValueString()),
 			"infraOperatorRoleARN":             []byte(config.InfraManagerRoleArn.ValueString()),
+			"secretBackend":                    []byte("vault"), //vault or openbao
 			"vaultRoleARN":                     []byte(config.VaultRoleArn.ValueString()),
 			"mviewStoreType":                   []byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
