@@ -54,6 +54,7 @@ const deploymentConfigTmpl = `
     "host": "{{ .RdsControlPlaneConfig.Host }}",
     "port": {{ .RdsControlPlaneConfig.Port }}
   },
+  "anthropicApiKey" : "{{ .DSSecret.AI.AnthropicApiKey }}",
   "kafka": {
     "hosts": "{{ .KafkaBrokerList }}",
     "bootstrapBrokersIam": "{{ .KafkaBrokerList }}",
@@ -215,6 +216,7 @@ type DSSecrets struct {
 	PostHogPublicId     string         `json:"posthogPublicID"`
 	Tailscale           Tailscale      `json:"tailscale"`
 	TrialConfig         TrialConfig    `json:"trialConfig"`
+	AI					AI			   `json:"ai"`
 }
 
 type TrialConfig struct {
@@ -225,6 +227,10 @@ type TrialConfig struct {
 	TrialStoreHashFunction      string `json:"trialStoreHashFunction"`
 	TrialStoreClusterTopicArn   string `json:"trialStoreClusterTopicArn"`
 	TrialStoreClusterIamRoleArn string `json:"trialStoreClusterIamRoleArn"`
+}
+
+type AI struct {
+	AnthropicApiKey string `json:"anthropicKey"`
 }
 
 type Auth0 struct {
