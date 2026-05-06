@@ -131,6 +131,7 @@ Optional:
 - `o11y_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to obervability endpoint load balancer.
 - `o11y_tls_certificate_arn` (String) The ARN of the TLS certificate for the observability endpoint.
 - `pg_wire_host_port` (Number) Deltastream pgwire protocol port
+- `pgwire_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to PGWire endpoint load balancer.
 - `rds_mviews_database_name` (String) RDS MViews postgres database name for deltastream
 - `rds_mviews_host_name` (String) RDS MViews host name
 - `rds_mviews_host_port` (Number) RDS MViews host name
