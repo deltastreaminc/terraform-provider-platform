@@ -3,6 +3,7 @@ package aws
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -216,6 +217,7 @@ type DSSecrets struct {
 	PostHogPublicId     string         `json:"posthogPublicID"`
 	Tailscale           Tailscale      `json:"tailscale"`
 	TrialConfig         TrialConfig    `json:"trialConfig"`
+	PgwireCertificateBase64   string   `json:"pgwireCertificateBase64"`
 	AI					AI			   `json:"ai"`
 }
 
@@ -509,6 +511,49 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 		}
 	}
 
+	// create pgwire certificate to use if not present (note that this will not be updated if dataplane is byoc after first time install as customer will have to manually update it with a valid certificate)
+	pgwireCertificateSecretName := calcPgWireCertificateSecretName(config, cfg.Region)
+	pgwireCertContent, err := base64.StdEncoding.DecodeString(dsSecrets.PgwireCertificateBase64)
+	if err != nil {
+		diags.AddError("unable to decode pgwire certificate from DeltaStream secret as base64", err.Error())
+		return
+	}
+	if _, err := secretsmanagerClient.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
+		SecretId: aws.String(pgwireCertificateSecretName),
+	}); err != nil {
+		var resourceNotFoundException *types.ResourceNotFoundException
+		if errors.As(err, &resourceNotFoundException) {
+			if _, err = secretsmanagerClient.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+				Name:         ptr.To(pgwireCertificateSecretName),
+				SecretString: ptr.To(string(pgwireCertContent)),
+				Tags: []types.Tag{
+					{Key: ptr.To("deltastream-io-region"), Value: ptr.To(cfg.Region)},
+					{Key: ptr.To("deltastream-io-team"), Value: ptr.To("true")},
+					{Key: ptr.To("deltastream-io-is-prod"), Value: ptr.To("true")},
+					{Key: ptr.To("deltastream-io-env"), Value: ptr.To(config.Stack.ValueString())},
+					{Key: ptr.To("deltastream-io-id"), Value: ptr.To(config.InfraId.ValueString())},
+					{Key: ptr.To("deltastream-io-name"), Value: ptr.To("ds-" + config.InfraId.ValueString())},
+					{Key: ptr.To("deltastream-io-is-byoc"), Value: ptr.To("true")},
+				},
+			}); err != nil {
+				diags.AddError("unable to create pgwire certificate "+pgwireCertificateSecretName, err.Error())
+				return
+			}
+		} else {
+			diags.AddError("unable to describe pgwire certificate "+pgwireCertificateSecretName, err.Error())
+			return
+		}
+	} else if config.InfraType.ValueString() != "byoc" {
+		// only update pgwire certificate if not byoc, as byoc customer will manage their own certificate and we don't want to overwrite it
+		if _, err = secretsmanagerClient.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
+			SecretId:     ptr.To(pgwireCertificateSecretName),
+			SecretString: ptr.To(string(pgwireCertContent)),
+		}); err != nil {
+			diags.AddError("unable to write pgwire certificate "+pgwireCertificateSecretName, err.Error())
+			return
+		}
+	}
+
 	return
 }
 
@@ -563,6 +608,10 @@ func UpdateVaultUserSecret(ctx context.Context, cfg aws.Config, dp awsconfig.AWS
 // example: deltastream/prod/ds/123456789012/aws/us-west-2/eks-abcdef/deployment-config
 func calcDeploymentConfigSecretName(config awsconfig.ClusterConfiguration, region string) string {
 	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
+}
+
+func calcPgWireCertificateSecretName(config awsconfig.ClusterConfiguration, region string) string {
+	return fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config-pgwire-cert", config.Stack.ValueString(), config.InfraId.ValueString(), region, config.EksResourceId.ValueString())
 }
 
 // get vault user secret name, note that the Deployment IAM Role only have permission to create secret with a specific naming convention
