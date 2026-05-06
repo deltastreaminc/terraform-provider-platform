@@ -216,6 +216,7 @@ type DSSecrets struct {
 	PostHogPublicId     string         `json:"posthogPublicID"`
 	Tailscale           Tailscale      `json:"tailscale"`
 	TrialConfig         TrialConfig    `json:"trialConfig"`
+	pgwireCertificateBase64   string   `json:"pgwireCertificateBase64"`
 	AI					AI			   `json:"ai"`
 }
 
