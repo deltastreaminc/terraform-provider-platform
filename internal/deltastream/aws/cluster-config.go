@@ -222,6 +222,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"apiTlsTermination":          []byte(config.ApiTlsMode.ValueString()),
 			"apiServerNlbCertificateArn": []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
 			"apiEndpointSecurityGroups":  []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
+			"pgwireEndpointSecurityGroups":  []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
 
 			"grafanaPromPushProxVpcHostname": []byte(config.MetricsUrl.ValueString()),
 
