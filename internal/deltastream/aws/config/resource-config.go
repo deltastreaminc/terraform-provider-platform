@@ -92,6 +92,7 @@ type ClusterConfiguration struct {
 	DeadmanAlertRoleArn              basetypes.StringValue `tfsdk:"deadman_alert_role_arn"`
 	KarpenterNodeRoleName            basetypes.StringValue `tfsdk:"karpenter_node_role_name"`
 	KarpenterIrsaRoleArn             basetypes.StringValue `tfsdk:"karpenter_irsa_role_arn"`
+	AiAgentRoleArn                   basetypes.StringValue `tfsdk:"ai_agent_role_arn"`
 	StoreProxyRoleArn                basetypes.StringValue `tfsdk:"store_proxy_role_arn"`
 	SqlStoreProxyRoleArn             basetypes.StringValue `tfsdk:"sql_store_proxy_role_arn"`
 	QueryServiceRoleArn              basetypes.StringValue `tfsdk:"query_service_role_arn"`
@@ -406,6 +407,11 @@ var Schema = schema.Schema{
 				},
 				"sql_store_proxy_role_arn": schema.StringAttribute{
 					Description: "The ARN of the role to facilitate connection to customer SQL type stores.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
+				},
+				"ai_agent_role_arn": schema.StringAttribute{
+					Description: "The ARN of the role to facilitate connection to AI agent resources.",
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
 				},

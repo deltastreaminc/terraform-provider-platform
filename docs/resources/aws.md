@@ -41,6 +41,7 @@ Required:
 
 - `account_id` (String) The account ID hosting the DeltaStream dataplane.
 - `additional_api_server_cors_uris` (String) Addition Web Console URIs for api server CORS setting.
+- `ai_agent_role_arn` (String) The ARN of the role to facilitate connection to AI agent resources.
 - `api_hostname` (String) The hostname of the dataplane API endpoint.
 - `api_subnet_mode` (String) The subnet mode for dataplane API endpoint.
 - `api_tls_mode` (String) The TLS/HTTPS mode for dataplane API endpoint.
