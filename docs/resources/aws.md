@@ -41,6 +41,7 @@ Required:
 
 - `account_id` (String) The account ID hosting the DeltaStream dataplane.
 - `additional_api_server_cors_uris` (String) Addition Web Console URIs for api server CORS setting.
+- `ai_agent_role_arn` (String) The ARN of the role to facilitate connection to AI agent resources.
 - `api_hostname` (String) The hostname of the dataplane API endpoint.
 - `api_subnet_mode` (String) The subnet mode for dataplane API endpoint.
 - `api_tls_mode` (String) The TLS/HTTPS mode for dataplane API endpoint.
@@ -131,6 +132,7 @@ Optional:
 - `o11y_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to obervability endpoint load balancer.
 - `o11y_tls_certificate_arn` (String) The ARN of the TLS certificate for the observability endpoint.
 - `pg_wire_host_port` (Number) Deltastream pgwire protocol port
+- `pgwire_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to PGWire endpoint load balancer.
 - `rds_mviews_database_name` (String) RDS MViews postgres database name for deltastream
 - `rds_mviews_host_name` (String) RDS MViews host name
 - `rds_mviews_host_port` (Number) RDS MViews host name

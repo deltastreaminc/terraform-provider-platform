@@ -92,6 +92,7 @@ type ClusterConfiguration struct {
 	DeadmanAlertRoleArn              basetypes.StringValue `tfsdk:"deadman_alert_role_arn"`
 	KarpenterNodeRoleName            basetypes.StringValue `tfsdk:"karpenter_node_role_name"`
 	KarpenterIrsaRoleArn             basetypes.StringValue `tfsdk:"karpenter_irsa_role_arn"`
+	AiAgentRoleArn                   basetypes.StringValue `tfsdk:"ai_agent_role_arn"`
 	StoreProxyRoleArn                basetypes.StringValue `tfsdk:"store_proxy_role_arn"`
 	SqlStoreProxyRoleArn             basetypes.StringValue `tfsdk:"sql_store_proxy_role_arn"`
 	QueryServiceRoleArn              basetypes.StringValue `tfsdk:"query_service_role_arn"`
@@ -122,6 +123,7 @@ type ClusterConfiguration struct {
 	ApiTlsMode               basetypes.StringValue `tfsdk:"api_tls_mode"`
 	ApiTlsCertificateArn     basetypes.StringValue `tfsdk:"api_tls_certificate_arn"`
 	ApiIngressSecurityGroups basetypes.StringValue `tfsdk:"api_ingress_security_groups"`
+	PgwireIngressSecurityGroups basetypes.StringValue `tfsdk:"pgwire_ingress_security_groups"`
 
 	KmsKeyId          basetypes.StringValue `tfsdk:"kms_key_id"`
 	DynamoDbTableName basetypes.StringValue `tfsdk:"dynamodb_table_name"`
@@ -408,6 +410,11 @@ var Schema = schema.Schema{
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
 				},
+				"ai_agent_role_arn": schema.StringAttribute{
+					Description: "The ARN of the role to facilitate connection to AI agent resources.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
+				},
 				"query_service_role_arn": schema.StringAttribute{
 					Description: "The ARN of the role to assume for query service.",
 					Required:    true,
@@ -515,6 +522,11 @@ var Schema = schema.Schema{
 					Description: "Comma separated AWS security group name(s) that will be attached to API endpoint load balancer.",
 					Optional:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[a-zA-Z0-9-,]+$`), "Invalid api ingress security group names")},
+				},
+				"pgwire_ingress_security_groups": schema.StringAttribute{
+					Description: "Comma separated AWS security group name(s) that will be attached to PGWire endpoint load balancer.",
+					Optional:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[a-zA-Z0-9-,]+$`), "Invalid pgwire ingress security group names")},
 				},
 				"api_subnet_mode": schema.StringAttribute{
 					Description: "The subnet mode for dataplane API endpoint.",
