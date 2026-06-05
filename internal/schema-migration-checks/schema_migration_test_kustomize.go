@@ -14,7 +14,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	yaml "gopkg.in/yaml.v3"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -76,94 +75,64 @@ func RenderAndApplyMigrationTemplate(ctx context.Context, kubeClient *util.Retry
 	return d
 }
 
-// waitForRDSMigrationKustomizationAndCheckLogs waits for a kustomization to complete and checks its logs
+// waitForRDSMigrationKustomizationAndCheckLogs waits for schema migration result ConfigMap and checks status
 func waitForRDSMigrationKustomizationAndCheckLogs(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset, namespace, kustomizationName, jobName string) (bool, error) {
-	// Start looking for pods immediately
-	pods := &corev1.PodList{}
-	maxAttempts := 60 // 10 minutes total
+	// Wait for result ConfigMap instead of polling pod status
+	// This survives pod garbage collection and provides reliable completion signal
+	resultConfigMapName := "schema-migrate-result"
+	maxAttempts := 300 // 50 minutes total (300 * 10 seconds)
+	
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if err := kubeClient.List(ctx, pods, client.InNamespace(namespace), client.MatchingLabels{
-			"batch.kubernetes.io/job-name": jobName,
-		}); err != nil {
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		if len(pods.Items) > 0 {
-			break
-		}
-		time.Sleep(10 * time.Second)
-	}
-
-	if len(pods.Items) == 0 {
-		return false, fmt.Errorf("no pods found for job after %d attempts", maxAttempts)
-	}
-
-	pod := pods.Items[0]
-
-	// Get job details
-	job, err := k8sClientset.BatchV1().Jobs(namespace).Get(context.TODO(), jobName, metav1.GetOptions{})
-	if err != nil {
-		return false, fmt.Errorf("failed to get job details: %v", err)
-	}
-
-	// Check if job is complete
-	for _, condition := range job.Status.Conditions {
-		if condition.Type == batchv1.JobComplete && condition.Status == "True" {
-			tflog.Debug(ctx, "Job completed", map[string]interface{}{"job_name": jobName})
-			return true, nil
-		} else if condition.Type == batchv1.JobFailed && condition.Status == "True" {
-			return false, fmt.Errorf("job has failed")
-		}
-	}
-
-	maxWaitAttempts := 300 // 50 minutes total (300 * 10 seconds)
-	for attempt := 0; attempt < maxWaitAttempts; attempt++ {
-		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
+		cm := &corev1.ConfigMap{}
+		if err := kubeClient.Get(ctx, client.ObjectKey{Name: resultConfigMapName, Namespace: namespace}, cm); err != nil {
+			if attempt%6 == 0 {
+				tflog.Debug(ctx, "Waiting for schema-migrate result ConfigMap", map[string]interface{}{
+					"attempt":  attempt,
+					"interval": "10s",
+					"job_name": jobName,
+				})
+			}
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		containerCompleted := false
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.State.Terminated != nil {
-				if containerStatus.State.Terminated.ExitCode == 0 {
-					containerCompleted = true
-					break
-				} else {
-					return false, fmt.Errorf("container failed with exit code %d", containerStatus.State.Terminated.ExitCode)
+		// ConfigMap found - check status
+		status := cm.Data["status"]
+		message := cm.Data["message"]
+		timestamp := cm.Data["timestamp"]
+
+		tflog.Info(ctx, "Schema migration result ConfigMap found", map[string]interface{}{
+			"status":    status,
+			"message":   message,
+			"timestamp": timestamp,
+		})
+
+		if status == "success" {
+			// Try to get pod logs for additional context if pod still exists
+			pods := &corev1.PodList{}
+			if err := kubeClient.List(ctx, pods, client.InNamespace(namespace), client.MatchingLabels{
+				"batch.kubernetes.io/job-name": jobName,
+			}); err == nil && len(pods.Items) > 0 {
+				pod := pods.Items[0]
+				// Attempt to get logs, but don't fail if pod is already deleted
+				if logs, err := k8sClientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).Do(ctx).Raw(); err == nil {
+					tflog.Debug(ctx, "Migration logs", map[string]interface{}{
+						"logs": string(logs),
+					})
 				}
 			}
+			return true, nil
 		}
 
-		if containerCompleted {
-			// Check job status again
-			job, err := k8sClientset.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
-			if err != nil {
-				time.Sleep(10 * time.Second)
-				continue
-			}
-
-			// If job is still active but container is done, wait a bit more
-			if job.Status.Active > 0 {
-				time.Sleep(10 * time.Second)
-				continue
-			}
-
-			// If job succeeded
-			if job.Status.Succeeded > 0 {
-				return true, nil
-			}
-
-			// If job failed
-			if job.Status.Failed > 0 {
-				return false, fmt.Errorf("job has failed")
-			}
+		if status == "failed" {
+			return false, fmt.Errorf("schema migration failed: %s", message)
 		}
 
+		// Status not yet set or unknown
 		time.Sleep(10 * time.Second)
 	}
 
-	return false, fmt.Errorf("timed out waiting for job to complete after %d attempts", maxWaitAttempts)
+	return false, fmt.Errorf("timed out waiting for schema migration result ConfigMap after %d attempts (50 minutes)", maxAttempts)
 }
 
 // createRDSMigrationNamespace creates a new namespace if it doesn't exist
