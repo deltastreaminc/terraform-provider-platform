@@ -387,5 +387,15 @@ func (r *RetryableClient) List(ctx context.Context, list client.ObjectList, opts
 	})
 }
 
+func (r *RetryableClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	return retry.Do(ctx, retrylimits, func(ctx context.Context) error {
+		if err := r.Client.Apply(ctx, obj, opts...); err != nil {
+			tflog.Debug(ctx, "apply error "+err.Error())
+			return retry.RetryableError(err)
+		}
+		return nil
+	})
+}
+
 var _ client.Reader = &RetryableClient{}
 var _ client.Writer = &RetryableClient{}
