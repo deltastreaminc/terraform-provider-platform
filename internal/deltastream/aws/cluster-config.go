@@ -120,6 +120,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	if !config.PgWireHostPort.IsNull() && config.PgWireHostPort.ValueInt64() > 0 {
 		pgWireHostPort = int(config.PgWireHostPort.ValueInt64())
 	}
+	kubeApiServerEndpoint := *cluster.Endpoint
+
+	kubeApiServerHost := strings.TrimPrefix(kubeApiServerEndpoint, "https://")
+	kubeApiServerPort := "443"
+
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
@@ -160,7 +165,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"clusterPrivateSubnetID3":          []byte(clusterSubnetId3),
 			"clusterPublicSubnetIDs":           []byte(strings.Join(clusterPublicSubnetIDs, ",")),
 			"discoveryRegion":                  []byte(cfg.Region),
-			"apiServerURI":                     []byte(*cluster.Endpoint),
+			"apiServerURI":                     []byte(kubeApiServerEndpoint),
+			"kubeApiServerHost":                []byte(kubeApiServerHost),
+			"kubeApiServerPort":                []byte(kubeApiServerPort),
 			"apiServerTokenIssuer":             []byte(*cluster.Identity.Oidc.Issuer),
 			"loadbalancerClass":                []byte("service.k8s.aws/nlb"), //hardcode
 			"autoscaleMin":                     []byte("3"),                   //hardcode
