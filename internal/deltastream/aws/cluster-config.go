@@ -120,6 +120,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	if !config.PgWireHostPort.IsNull() && config.PgWireHostPort.ValueInt64() > 0 {
 		pgWireHostPort = int(config.PgWireHostPort.ValueInt64())
 	}
+	kubeApiServerEndpoint := *cluster.Endpoint
+
+	kubeApiServerHost := strings.TrimPrefix(kubeApiServerEndpoint, "https://")
+	kubeApiServerPort := "443"
+
 	clusterConfig := corev1.Secret{ObjectMeta: v1.ObjectMeta{Name: "cluster-settings", Namespace: "cluster-config"}}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient.Client, &clusterConfig, func() error {
 		clusterConfig.Data = map[string][]byte{
@@ -160,7 +165,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"clusterPrivateSubnetID3":          []byte(clusterSubnetId3),
 			"clusterPublicSubnetIDs":           []byte(strings.Join(clusterPublicSubnetIDs, ",")),
 			"discoveryRegion":                  []byte(cfg.Region),
-			"apiServerURI":                     []byte(*cluster.Endpoint),
+			"apiServerURI":                     []byte(kubeApiServerEndpoint),
+			"kubeApiServerHost":                []byte(kubeApiServerHost),
+			"kubeApiServerPort":                []byte(kubeApiServerPort),
 			"apiServerTokenIssuer":             []byte(*cluster.Identity.Oidc.Issuer),
 			"loadbalancerClass":                []byte("service.k8s.aws/nlb"), //hardcode
 			"autoscaleMin":                     []byte("3"),                   //hardcode
@@ -168,6 +175,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"debeziumRoleARN":                  []byte(config.DebeziumRoleArn.ValueString()),
 			"externalSecretsRoleARN":           []byte(config.AwsSecretsManagerRoRoleARN.ValueString()),
 			"infraOperatorRoleARN":             []byte(config.InfraManagerRoleArn.ValueString()),
+			"secretBackend":                    []byte("vault"), //vault or openbao
 			"vaultRoleARN":                     []byte(config.VaultRoleArn.ValueString()),
 			"mviewStoreType":                   []byte(config.MaterializedViewStoreType.ValueString()),
 			"mviewsRdsCredsSecretName":         []byte(config.RdsMViewsMasterPasswordSecret.ValueString()),
@@ -184,6 +192,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"karpenterIrsaARN":                 []byte(config.KarpenterIrsaRoleArn.ValueString()),
 			"storeProxyRoleARN":                []byte(config.StoreProxyRoleArn.ValueString()),
 			"sqlStoreProxyRoleARN":             []byte(config.SqlStoreProxyRoleArn.ValueString()),
+			"agentBedrockRoleArn":              []byte(config.AiAgentRoleArn.ValueString()),
 			"queryServiceRoleARN":              []byte(config.QueryServiceRoleArn.ValueString()),
 			"interruptionQueueName":            []byte(config.InterruptionQueueName.ValueString()),
 			"cw2lokiRoleARN":                   []byte(config.Cw2LokiRoleArn.ValueString()),
@@ -221,6 +230,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"apiTlsTermination":          []byte(config.ApiTlsMode.ValueString()),
 			"apiServerNlbCertificateArn": []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
 			"apiEndpointSecurityGroups":  []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
+			"pgwireEndpointSecurityGroups":  []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
 
 			"grafanaPromPushProxVpcHostname": []byte(config.MetricsUrl.ValueString()),
 
