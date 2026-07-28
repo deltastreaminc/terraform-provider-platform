@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"text/template"
 	"time"
 
@@ -98,124 +97,71 @@ func renderAndApplyTemplate(ctx context.Context, kubeClient *util.RetryableClien
 
 // This function is used to check if the schema version is newer than the new version and return false(if no migration needed) or true(if migration needed)
 func checkSchemaVersionNewer(ctx context.Context, kubeClient client.Client, k8sClientset *kubernetes.Clientset) (bool, error) {
-	// Start looking for pods immediately without waiting for kustomization
-	pods := &corev1.PodList{}
-	maxAttempts := 72 // Retry for up to 6 minutes (72 * 5 seconds)
+	// Wait for result ConfigMap from schema-version-check job instead of polling pod status
+	// This survives pod garbage collection and provides reliable completion signal
+	resultConfigMapName := "schema-version-check-result"
+	maxAttempts := 120 // Retry for up to 10 minutes (120 * 5 seconds)
 	attempt := 0
+
 	for {
 		if ctx.Err() != nil {
-			return false, fmt.Errorf("context canceled or timed out while waiting for job pods")
+			return false, fmt.Errorf("context canceled or timed out while waiting for schema version check result")
 		}
 		if attempt >= maxAttempts {
-			return false, fmt.Errorf("exceeded maximum attempts while waiting for job pods")
+			return false, fmt.Errorf("exceeded maximum attempts while waiting for schema version check result (10 minutes)")
 		}
 
-		if err := kubeClient.List(ctx, pods, client.InNamespace("deltastream"), client.MatchingLabels{"job-name": "schema-version-check"}); err != nil {
-			return false, fmt.Errorf("failed to get job pods: %v", err)
-		}
-		if len(pods.Items) > 0 {
-			break
-		}
-		time.Sleep(5 * time.Second)
-		attempt++
-	}
-
-	pod := pods.Items[0]
-
-	var logs []byte
-	var err error
-	versionCheckCompleted := false
-	versionCheckAttempts := 0
-	maxVersionCheckAttempts := 120 // Retry for up to 10 minutes (120 * 5 seconds)
-
-	for !versionCheckCompleted {
-		if ctx.Err() != nil {
-			return false, fmt.Errorf("context canceled or timed out while waiting for version check completion")
-		}
-		if versionCheckAttempts >= maxVersionCheckAttempts {
-			return false, fmt.Errorf("exceeded maximum attempts while waiting for version check completion")
-		}
-
-		if err := kubeClient.Get(ctx, client.ObjectKey{Name: pod.Name, Namespace: pod.Namespace}, &pod); err != nil {
-			return false, fmt.Errorf("failed to get pod status: %v", err)
-		}
-
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.Name == "schema-version-check" {
-				if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
-					time.Sleep(2 * time.Second)
-					logs, err = k8sClientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-						Container: containerStatus.Name,
-					}).Do(ctx).Raw()
-					if err != nil {
-						return false, fmt.Errorf("failed to get job logs: %v", err)
-					}
-					versionCheckCompleted = true
-					break
-				}
-				if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode != 0 {
-					return false, fmt.Errorf("container failed with exit code %d", containerStatus.State.Terminated.ExitCode)
-				}
+		cm := &corev1.ConfigMap{}
+		if err := kubeClient.Get(ctx, client.ObjectKey{Name: resultConfigMapName, Namespace: "deltastream"}, cm); err != nil {
+			if attempt%12 == 0 {
+				tflog.Debug(ctx, "Waiting for schema-version-check result ConfigMap", map[string]interface{}{
+					"attempt":  attempt,
+					"interval": "5s",
+				})
 			}
-		}
-		if !versionCheckCompleted {
 			time.Sleep(5 * time.Second)
-			versionCheckAttempts++
-		}
-	}
-
-	// Find the JSON object with versions
-	logLines := strings.Split(string(logs), "\n")
-	var (
-		jsonLines   []string
-		insideBlock bool
-	)
-	for _, line := range logLines {
-		line = strings.TrimSpace(line)
-		if line == "{" {
-			insideBlock = true
-			jsonLines = []string{line}
+			attempt++
 			continue
 		}
-		if insideBlock {
-			jsonLines = append(jsonLines, line)
-			if line == "}" {
-				break
-			}
+
+		// ConfigMap found - extract version data
+		status := cm.Data["status"]
+		if status != "success" {
+			failedMsg := cm.Data["message"]
+			return false, fmt.Errorf("schema version check failed: %s", failedMsg)
 		}
+
+		currentVersion := cm.Data["currentVersion"]
+		newVersion := cm.Data["newVersion"]
+
+		versionJSON := fmt.Sprintf(`{"currentVersion":"%s","newVersion":"%s"}`, currentVersion, newVersion)
+		tflog.Debug(ctx, "Found version data from ConfigMap", map[string]interface{}{
+			"versionJSON": versionJSON,
+		})
+
+		var schemaStatus SchemaStatus
+		if err := json.Unmarshal([]byte(versionJSON), &schemaStatus); err != nil {
+			return false, fmt.Errorf("failed to parse version data: %v", err)
+		}
+
+		versionsMsg := fmt.Sprintf("Parsed versions: currentVersion=%q, newVersion=%q", schemaStatus.CurrentVersion, schemaStatus.NewVersion)
+		tflog.Debug(ctx, versionsMsg)
+
+		// Compare versions
+		if schemaStatus.CurrentVersion == schemaStatus.NewVersion {
+			sameVersionMsg := fmt.Sprintf("Versions are the same (%s), no need to run schema migration", schemaStatus.CurrentVersion)
+			tflog.Debug(ctx, sameVersionMsg)
+			return false, nil
+		}
+		if schemaStatus.CurrentVersion > schemaStatus.NewVersion {
+			return false, fmt.Errorf("current schema version (%s) is newer than expected (%s): aborting migration", schemaStatus.CurrentVersion, schemaStatus.NewVersion)
+		}
+
+		startMigrationMsg := fmt.Sprintf("Starting schema migration from version %s to %s", schemaStatus.CurrentVersion, schemaStatus.NewVersion)
+		tflog.Debug(ctx, startMigrationMsg)
+
+		return true, nil
 	}
-	if len(jsonLines) == 0 {
-		return false, fmt.Errorf("no version JSON found in logs")
-	}
-	versionJSON := strings.Join(jsonLines, "\n")
-
-	// Print only the version JSON
-	versionJSONMsg := fmt.Sprintf("Found version JSON:\n%s", versionJSON)
-	tflog.Debug(ctx, versionJSONMsg)
-
-	var status SchemaStatus
-	if err := json.Unmarshal([]byte(versionJSON), &status); err != nil {
-		return false, fmt.Errorf("failed to parse JSON response: %v", err)
-	}
-
-	// Print parsed versions using fmt.Sprintf
-	versionsMsg := fmt.Sprintf("Parsed versions: currentVersion=%q, newVersion=%q", status.CurrentVersion, status.NewVersion)
-	tflog.Debug(ctx, versionsMsg)
-
-	// Compare versions
-	if status.CurrentVersion == status.NewVersion {
-		sameVersionMsg := fmt.Sprintf("Versions are the same (%s), no need to run schema migration", status.CurrentVersion)
-		tflog.Debug(ctx, sameVersionMsg)
-		return false, nil
-	}
-	if status.CurrentVersion > status.NewVersion {
-		return false, fmt.Errorf("current schema version (%s) is newer than expected (%s): aborting migration", status.CurrentVersion, status.NewVersion)
-	}
-
-	startMigrationMsg := fmt.Sprintf("Starting schema migration from version %s to %s", status.CurrentVersion, status.NewVersion)
-	tflog.Debug(ctx, startMigrationMsg)
-
-	return true, nil
 }
 
 func cleanupVersionCheckKustomization(kubeClient client.Client) error {
