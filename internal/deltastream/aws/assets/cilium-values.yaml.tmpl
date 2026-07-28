@@ -121,6 +121,8 @@ operator:
   image:
     repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/operator"
   replicas: 2
+  tolerations:
+  - operator: Exists
 policyEnforcementMode: default
 policyCIDRMatchMode: nodes
 hostFirewall:
