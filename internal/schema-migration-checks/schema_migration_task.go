@@ -25,7 +25,7 @@ import (
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
 
-const maxSupportedPostgresMajorVersion = 17
+const minPostgresMajorVersionForSchemaTest = 18
 
 // refreshCredentialsForLongRunningOperation resets cache and recreates clients.
 // Call before any step that might take >10 minutes.
@@ -64,7 +64,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	if err != nil {
 		return false, err
 	}
-	if postgresMajorVersion > maxSupportedPostgresMajorVersion {
+	if postgresMajorVersion >= minPostgresMajorVersionForSchemaTest {
 		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]any{"majorVersion": postgresMajorVersion})
 		return true, nil
 	}
