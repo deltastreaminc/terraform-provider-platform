@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
+
+const minPostgresMajorVersionForSchemaTest = 18
 
 // refreshCredentialsForLongRunningOperation resets cache and recreates clients.
 // Call before any step that might take >10 minutes.
@@ -57,12 +60,12 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
 	}
 
-	isAuroraServerless, err := isAuroraServerlessControlPlane(ctx, cfg, clusterConfig)
+	postgresMajorVersion, err := getPostgresMajorVersion(ctx, cfg, clusterConfig)
 	if err != nil {
 		return false, err
 	}
-	if isAuroraServerless {
-		tflog.Info(ctx, "Skipping schema migration test for Aurora Serverless control plane")
+	if postgresMajorVersion >= minPostgresMajorVersionForSchemaTest {
+		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]any{"majorVersion": postgresMajorVersion})
 		return true, nil
 	}
 
@@ -325,7 +328,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	return jobCompleted, nil
 }
 
-func isAuroraServerlessControlPlane(ctx context.Context, cfg aws.Config, config awsconfig.ClusterConfiguration) (bool, error) {
+func getPostgresMajorVersion(ctx context.Context, cfg aws.Config, config awsconfig.ClusterConfiguration) (int, error) {
 	clusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	cluster, err := rds.NewFromConfig(cfg).DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{
 		DBClusterIdentifier: aws.String(clusterName),
@@ -333,15 +336,20 @@ func isAuroraServerlessControlPlane(ctx context.Context, cfg aws.Config, config 
 	if err != nil {
 		var notFound *rdsTypes.DBClusterNotFoundFault
 		if errors.As(err, &notFound) {
-			return false, nil
+			return 0, nil
 		}
-		return false, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
+		return 0, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
 	}
 	if len(cluster.DBClusters) != 1 {
-		return false, fmt.Errorf("expected one control plane Aurora cluster named %s, found %d", clusterName, len(cluster.DBClusters))
+		return 0, fmt.Errorf("expected one control plane Aurora cluster named %s, found %d", clusterName, len(cluster.DBClusters))
 	}
 
-	return cluster.DBClusters[0].ServerlessV2ScalingConfiguration != nil, nil
+	majorVersion, _, _ := strings.Cut(aws.ToString(cluster.DBClusters[0].EngineVersion), ".")
+	parsedMajorVersion, err := strconv.Atoi(majorVersion)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse control plane Aurora engine version %q: %w", aws.ToString(cluster.DBClusters[0].EngineVersion), err)
+	}
+	return parsedMajorVersion, nil
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
