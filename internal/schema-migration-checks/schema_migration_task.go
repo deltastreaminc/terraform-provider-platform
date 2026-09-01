@@ -337,7 +337,7 @@ func getPostgresMajorVersion(ctx context.Context, cfg aws.Config, config awsconf
 		var notFound *rdsTypes.DBClusterNotFoundFault
 		if errors.As(err, &notFound) {
 			tflog.Debug(ctx, "Control plane Aurora cluster not found; proceeding with schema migration test", map[string]interface{}{"clusterName": clusterName})
-			return 0, nil
+			return -1, nil
 		}
 		return 0, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
 	}
