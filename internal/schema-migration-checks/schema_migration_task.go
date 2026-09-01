@@ -52,6 +52,19 @@ func refreshCredentialsForLongRunningOperation(
 //
 // All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+	clusterConfig, diags := dp.ClusterConfigurationData(ctx)
+	if diags.HasError() {
+		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
+	}
+
+	isAuroraServerless, err := isAuroraServerlessControlPlane(ctx, cfg, clusterConfig)
+	if err != nil {
+		return false, err
+	}
+	if isAuroraServerless {
+		tflog.Info(ctx, "Skipping schema migration test for Aurora Serverless control plane")
+		return true, nil
+	}
 
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
@@ -310,6 +323,21 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	}()
 
 	return jobCompleted, nil
+}
+
+func isAuroraServerlessControlPlane(ctx context.Context, cfg aws.Config, config awsconfig.ClusterConfiguration) (bool, error) {
+	clusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
+	cluster, err := rds.NewFromConfig(cfg).DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{
+		DBClusterIdentifier: aws.String(clusterName),
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
+	}
+	if len(cluster.DBClusters) != 1 {
+		return false, fmt.Errorf("expected one control plane Aurora cluster named %s, found %d", clusterName, len(cluster.DBClusters))
+	}
+
+	return cluster.DBClusters[0].ServerlessV2ScalingConfiguration != nil, nil
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
