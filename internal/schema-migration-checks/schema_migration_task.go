@@ -25,7 +25,7 @@ import (
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
 
-const minPostgresMajorVersionForSchemaTest = 18
+const maxSupportedPostgresMajorVersion = 17
 
 // refreshCredentialsForLongRunningOperation resets cache and recreates clients.
 // Call before any step that might take >10 minutes.
@@ -64,7 +64,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	if err != nil {
 		return false, err
 	}
-	if postgresMajorVersion >= minPostgresMajorVersionForSchemaTest {
+	if postgresMajorVersion > maxSupportedPostgresMajorVersion {
 		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]any{"majorVersion": postgresMajorVersion})
 		return true, nil
 	}
@@ -344,12 +344,12 @@ func getPostgresMajorVersion(ctx context.Context, cfg aws.Config, config awsconf
 		return 0, fmt.Errorf("expected one control plane Aurora cluster named %s, found %d", clusterName, len(cluster.DBClusters))
 	}
 
-	majorVersion, _, _ := strings.Cut(aws.ToString(cluster.DBClusters[0].EngineVersion), ".")
-	parsedMajorVersion, err := strconv.Atoi(majorVersion)
+	version, _, _ := strings.Cut(aws.ToString(cluster.DBClusters[0].EngineVersion), ".")
+	majorVersion, err := strconv.Atoi(version)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse control plane Aurora engine version %q: %w", aws.ToString(cluster.DBClusters[0].EngineVersion), err)
 	}
-	return parsedMajorVersion, nil
+	return majorVersion, nil
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
