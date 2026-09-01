@@ -331,6 +331,10 @@ func isAuroraServerlessControlPlane(ctx context.Context, cfg aws.Config, config 
 		DBClusterIdentifier: aws.String(clusterName),
 	})
 	if err != nil {
+		var notFound *rdsTypes.DBClusterNotFoundFault
+		if errors.As(err, &notFound) {
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
 	}
 	if len(cluster.DBClusters) != 1 {
