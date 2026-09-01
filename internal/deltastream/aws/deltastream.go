@@ -63,7 +63,7 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 		return
 	}
 
-	if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
+	if clusterConfig.EnableSchemaMigrationTest.ValueBool() && !clusterConfig.RdsControlPlaneUsingAurora.ValueBool() {
 		tflog.Debug(ctx, "Running schema migration test...")
 		migrationTestSuccessfulContinueToDeploy, err := schemamigration.RunMigrationTestBeforeUpgrade(ctx, cfg, dp)
 		if err != nil {
@@ -85,6 +85,8 @@ func installDeltaStream(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDat
 			d.AddError("error getting fresh kube client after schema migration test", err.Error())
 			return
 		}
+	} else if clusterConfig.EnableSchemaMigrationTest.ValueBool() {
+		tflog.Debug(ctx, "Skipping schema migration test because the RDS control plane uses Aurora")
 	}
 
 	d.Append(util.RenderAndApplyTemplate(ctx, kubeClient, "platform", platformTemplate, map[string]string{
