@@ -55,23 +55,23 @@ func refreshCredentialsForLongRunningOperation(
 //
 // All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+	// Create context with timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
+
 	clusterConfig, diags := dp.ClusterConfigurationData(ctx)
 	if diags.HasError() {
 		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
 	}
 
-	postgresMajorVersion, err := getPostgresMajorVersion(ctx, cfg, clusterConfig)
+	postgresMajorVersion, err := getPostgresMajorVersion(timeoutCtx, cfg, clusterConfig)
 	if err != nil {
 		return false, err
 	}
 	if postgresMajorVersion >= minPostgresMajorVersionForSchemaTest {
-		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]any{"majorVersion": postgresMajorVersion})
+		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]interface{}{"majorVersion": postgresMajorVersion})
 		return true, nil
 	}
-
-	// Create context with timeout
-	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
-	defer cancel()
 
 	// Get initial kube clients
 	kubeClient, err := util.GetKubeClient(timeoutCtx, cfg, dp)
@@ -336,6 +336,7 @@ func getPostgresMajorVersion(ctx context.Context, cfg aws.Config, config awsconf
 	if err != nil {
 		var notFound *rdsTypes.DBClusterNotFoundFault
 		if errors.As(err, &notFound) {
+			tflog.Debug(ctx, "Control plane Aurora cluster not found; proceeding with schema migration test", map[string]interface{}{"clusterName": clusterName})
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
