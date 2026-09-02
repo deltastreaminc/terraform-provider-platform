@@ -52,6 +52,7 @@ func refreshCredentialsForLongRunningOperation(
 //
 // All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
