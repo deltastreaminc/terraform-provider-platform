@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,8 +23,6 @@ import (
 	awsconfig "github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/config"
 	"github.com/deltastreaminc/terraform-provider-platform/internal/deltastream/aws/util"
 )
-
-const minPostgresMajorVersionForSchemaTest = 18
 
 // refreshCredentialsForLongRunningOperation resets cache and recreates clients.
 // Call before any step that might take >10 minutes.
@@ -58,20 +55,6 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
-
-	clusterConfig, diags := dp.ClusterConfigurationData(ctx)
-	if diags.HasError() {
-		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
-	}
-
-	postgresMajorVersion, err := getPostgresMajorVersion(timeoutCtx, cfg, clusterConfig)
-	if err != nil {
-		return false, err
-	}
-	if postgresMajorVersion >= minPostgresMajorVersionForSchemaTest {
-		tflog.Info(ctx, "Skipping schema migration test for unsupported Postgres version", map[string]interface{}{"majorVersion": postgresMajorVersion})
-		return true, nil
-	}
 
 	// Get initial kube clients
 	kubeClient, err := util.GetKubeClient(timeoutCtx, cfg, dp)
@@ -326,31 +309,6 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	}()
 
 	return jobCompleted, nil
-}
-
-func getPostgresMajorVersion(ctx context.Context, cfg aws.Config, config awsconfig.ClusterConfiguration) (int, error) {
-	clusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
-	cluster, err := rds.NewFromConfig(cfg).DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{
-		DBClusterIdentifier: aws.String(clusterName),
-	})
-	if err != nil {
-		var notFound *rdsTypes.DBClusterNotFoundFault
-		if errors.As(err, &notFound) {
-			tflog.Debug(ctx, "Control plane Aurora cluster not found; continuing without Postgres version check", map[string]interface{}{"clusterName": clusterName})
-			return 0, nil
-		}
-		return 0, fmt.Errorf("failed to describe control plane Aurora cluster %s: %w", clusterName, err)
-	}
-	if len(cluster.DBClusters) != 1 {
-		return 0, fmt.Errorf("expected one control plane Aurora cluster named %s, found %d", clusterName, len(cluster.DBClusters))
-	}
-
-	version, _, _ := strings.Cut(aws.ToString(cluster.DBClusters[0].EngineVersion), ".")
-	majorVersion, err := strconv.Atoi(version)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse control plane Aurora engine version %q: %w", aws.ToString(cluster.DBClusters[0].EngineVersion), err)
-	}
-	return majorVersion, nil
 }
 
 // getLatestAPIServerVersion downloads the image list from S3 and returns the latest API server version
