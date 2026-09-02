@@ -118,11 +118,11 @@ type ClusterConfiguration struct {
 	O11yTlsCertificateArn     basetypes.StringValue `tfsdk:"o11y_tls_certificate_arn"`
 	O11yIngressSecurityGroups basetypes.StringValue `tfsdk:"o11y_ingress_security_groups"`
 
-	ApiHostname              basetypes.StringValue `tfsdk:"api_hostname"`
-	ApiSubnetMode            basetypes.StringValue `tfsdk:"api_subnet_mode"`
-	ApiTlsMode               basetypes.StringValue `tfsdk:"api_tls_mode"`
-	ApiTlsCertificateArn     basetypes.StringValue `tfsdk:"api_tls_certificate_arn"`
-	ApiIngressSecurityGroups basetypes.StringValue `tfsdk:"api_ingress_security_groups"`
+	ApiHostname                 basetypes.StringValue `tfsdk:"api_hostname"`
+	ApiSubnetMode               basetypes.StringValue `tfsdk:"api_subnet_mode"`
+	ApiTlsMode                  basetypes.StringValue `tfsdk:"api_tls_mode"`
+	ApiTlsCertificateArn        basetypes.StringValue `tfsdk:"api_tls_certificate_arn"`
+	ApiIngressSecurityGroups    basetypes.StringValue `tfsdk:"api_ingress_security_groups"`
 	PgwireIngressSecurityGroups basetypes.StringValue `tfsdk:"pgwire_ingress_security_groups"`
 
 	KmsKeyId          basetypes.StringValue `tfsdk:"kms_key_id"`
@@ -132,10 +132,11 @@ type ClusterConfiguration struct {
 	KafkaListenerPorts basetypes.ListValue   `tfsdk:"kafka_listener_ports"`
 	KafkaClusterName   basetypes.StringValue `tfsdk:"kafka_cluster_name"`
 
-	RdsControlPlaneResourceID basetypes.StringValue `tfsdk:"rds_control_plane_resource_id"`
-	RdsMViewsResourceID       basetypes.StringValue `tfsdk:"rds_mviews_resource_id"`
-	RdsMViewsUsingAurora      basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
-	MaterializedViewStoreType basetypes.StringValue `tfsdk:"materialized_view_store_type"`
+	RdsControlPlaneResourceID  basetypes.StringValue `tfsdk:"rds_control_plane_resource_id"`
+	RdsControlPlaneUsingAurora basetypes.BoolValue   `tfsdk:"rds_control_plane_using_aurora"`
+	RdsMViewsResourceID        basetypes.StringValue `tfsdk:"rds_mviews_resource_id"`
+	RdsMViewsUsingAurora       basetypes.BoolValue   `tfsdk:"rds_mviews_using_aurora"`
+	MaterializedViewStoreType  basetypes.StringValue `tfsdk:"materialized_view_store_type"`
 
 	EnableSchemaMigrationTest basetypes.BoolValue `tfsdk:"enable_schema_migration_test"`
 
@@ -584,6 +585,10 @@ var Schema = schema.Schema{
 				},
 				"rds_mviews_using_aurora": schema.BoolAttribute{
 					Description: "Flag to indicate rds for mviews is aurora cluster.",
+					Required:    true,
+				},
+				"rds_control_plane_using_aurora": schema.BoolAttribute{
+					Description: "Flag to indicate the RDS control plane is an Aurora cluster.",
 					Required:    true,
 				},
 				"materialized_view_store_type": schema.StringAttribute{

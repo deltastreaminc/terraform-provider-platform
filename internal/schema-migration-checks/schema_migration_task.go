@@ -52,6 +52,14 @@ func refreshCredentialsForLongRunningOperation(
 //
 // All other scenarios will return false for migrationTestSuccessfulContinueToDeploy and requires aborting of deployment for a faulty version or schema migration due to current database state.
 func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDataplane) (migrationTestSuccessfulContinueToDeploy bool, err error) {
+	clusterConfig, diags := dp.ClusterConfigurationData(ctx)
+	if diags.HasError() {
+		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
+	}
+	if clusterConfig.RdsControlPlaneUsingAurora.ValueBool() {
+		tflog.Debug(ctx, "Skipping schema migration test because the RDS control plane uses Aurora")
+		return true, nil
+	}
 
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
