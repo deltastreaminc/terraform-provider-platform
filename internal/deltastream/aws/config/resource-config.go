@@ -105,6 +105,7 @@ type ClusterConfiguration struct {
 	AdditionalApiServerCorsUris      basetypes.StringValue `tfsdk:"additional_api_server_cors_uris"`
 	CustomCredentialsRoleARN         basetypes.StringValue `tfsdk:"custom_credentials_role_arn"`
 	CustomCredentialsImage           basetypes.StringValue `tfsdk:"custom_credentials_image"`
+	ClickHouseBackupRoleArn          basetypes.StringValue `tfsdk:"clickhouse_backup_role_arn"`
 
 	WorkloadCredentialsMode     basetypes.StringValue `tfsdk:"workload_credentials_mode"`
 	WorkloadCredentialsSecret   basetypes.StringValue `tfsdk:"workload_credentials_secret"`
@@ -512,6 +513,11 @@ var Schema = schema.Schema{
 				"custom_credentials_image": schema.StringAttribute{
 					Description: "The image to use for the custom credentials plugin.",
 					Optional:    true,
+				},
+				"clickhouse_backup_role_arn": schema.StringAttribute{
+					Description: "The ARN of the role to assume for the ClickHouse backup sidecar.",
+					Optional:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
 				},
 
 				"api_hostname": schema.StringAttribute{
