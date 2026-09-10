@@ -113,7 +113,11 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	cloudImagRegistry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", config.AccountId.ValueString(), cfg.Region)
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-bundle-pem", strings.ToLower(cfg.Region))
-
+	// when using Aurora use multiple region bundle
+	if config.RdsControlPlaneUsingAurora.ValueBool() {
+		// identify main geographic location that will host certs for primary dataplane region and aurora geo replicated region, e.g. us for us-east-1
+		rdsCACertsRegionalBundleName = fmt.Sprintf("rds-certs-%s-all-bundle-pem", strings.Split(strings.ToLower(cfg.Region), "-")[0])
+	}
 	hashicorpVaultKeyName := strings.ToLower(fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/vault", config.Stack.ValueString(), config.InfraId.ValueString(), cfg.Region))
 
 	pgWireHostPort := 5432
@@ -134,6 +138,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"environment":           []byte(config.Stack.ValueString()),
 			"cloud":                 []byte("aws"),
 			"region":                []byte(cfg.Region),
+			"controlplaneRdsRegion": []byte(cfg.Region), // this can be overriden for fast failover when using RDS Aurora serverless geo replication
 			"topology":              []byte("ds"),
 			"dsEcrAccountID":        []byte(config.AccountId.ValueString()),
 			"cloudImageRegistry":    []byte(cloudImagRegistry),
