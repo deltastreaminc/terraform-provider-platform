@@ -134,6 +134,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"environment":           []byte(config.Stack.ValueString()),
 			"cloud":                 []byte("aws"),
 			"region":                []byte(cfg.Region),
+			"controlplaneRdsRegion": []byte(cfg.Region), // this can be overriden for fast failover when using RDS Aurora serverless geo replication
 			"topology":              []byte("ds"),
 			"dsEcrAccountID":        []byte(config.AccountId.ValueString()),
 			"cloudImageRegistry":    []byte(cloudImagRegistry),
