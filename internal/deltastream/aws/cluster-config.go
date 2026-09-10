@@ -114,7 +114,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-bundle-pem", strings.ToLower(cfg.Region))
 	// when using Aurora use multiple region bundle
-	if clusterConfig.RdsControlPlaneUsingAurora.ValueBool() {
+	if config.RdsControlPlaneUsingAurora.ValueBool() {
 		// identify main geographic location that will host certs for primary dataplane region and aurora geo replicated region, e.g. us for us-east-1
 		rdsCACertsRegionalBundleName = fmt.Sprintf("rds-certs-%s-all-bundle-pem", strings.Split(strings.ToLower(cfg.Region), "-")[0])
 	}
