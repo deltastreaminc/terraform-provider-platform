@@ -195,6 +195,7 @@ const deploymentConfigTmpl = `
 	"clientId": "{{ .DSSecret.Tailscale.ClientId }}",
 	"clientSecret": "{{ .DSSecret.Tailscale.ClientSecret }}"
   },
+  "e2eLocalConfig": "{{ .DSSecret.E2eLocalConfig }}",
   "trialConfig": {
     "trialStoreRegion": "{{ .DSSecret.TrialConfig.TrialStoreRegion }}",
     "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
@@ -219,6 +220,7 @@ type DSSecrets struct {
 	TrialConfig         TrialConfig    `json:"trialConfig"`
 	PgwireCertificateBase64   string   `json:"pgwireCertificateBase64"`
 	AI					AI			   `json:"ai"`
+	E2eLocalConfig      string         `json:"e2eLocalConfig"`
 }
 
 type TrialConfig struct {
