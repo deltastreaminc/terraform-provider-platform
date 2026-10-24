@@ -112,6 +112,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 
 	cloudImagRegistry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", config.AccountId.ValueString(), cfg.Region)
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
+	// matches the per-dataplane secret created by client/AWS/account/account/secrets/e2e-local-config-secret.tf
+	e2eLocalConfigSecret := fmt.Sprintf("deltastream/ds-%s/%s/e2e-local-config", config.InfraId.ValueString(), config.Stack.ValueString())
 	// use single entry for a geographic location so we can support both RDS classic or RDS Aurora geo replicated, this is needed as external secret has limit of 64K, so we have to keep this limited to region actually used by a dataplane
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-all-bundle-pem", strings.Split(strings.ToLower(cfg.Region), "-")[0])
 
@@ -141,6 +143,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"cloudImageRegistry":    []byte(cloudImagRegistry),
 			"ociCloudImageRegistry": []byte(cloudImagRegistry),
 			"deployConfigSecret":    []byte(deployConfigSecret),
+			"e2eLocalConfigSecret":  []byte(e2eLocalConfigSecret),
 			"rdsCACertsBundleName":  []byte(rdsCACertsRegionalBundleName),
 			"execEngineVersion":     []byte(execEngineVersion),
 			// todo remove duplicate properties
@@ -220,25 +223,25 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"o11yNlbSslCertificate":      []byte(ptr.Deref(config.O11yTlsCertificateArn.ValueStringPointer(), "")),
 			"o11yEndpointSecurityGroups": []byte(ptr.Deref(config.O11yIngressSecurityGroups.ValueStringPointer(), "")),
 
-			"apiHostname":                []byte(config.ApiHostname.ValueString()),
-			"consoleHostname":            []byte(config.ConsoleHostname.ValueString()),
-			"consoleV2Hostname":          []byte(config.ConsoleHostname.ValueString()),
-			"downloadsHostname":          []byte(config.DownloadsHostname.ValueString()),
-			"pgwireHostname":             []byte(config.PgWireHostname.ValueString()),
-			"pgwirePort":                 []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
-			"pgwireExternalEndpoint":     []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
-			"platformVersion":            []byte(config.ProductVersion.ValueString()),
-			"apiEndpointSubnet":          []byte(config.ApiSubnetMode.ValueString()),
-			"apiTlsTermination":          []byte(config.ApiTlsMode.ValueString()),
-			"apiServerNlbCertificateArn": []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
-			"apiEndpointSecurityGroups":  []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
-			"pgwireEndpointSecurityGroups":  []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
+			"apiHostname":                  []byte(config.ApiHostname.ValueString()),
+			"consoleHostname":              []byte(config.ConsoleHostname.ValueString()),
+			"consoleV2Hostname":            []byte(config.ConsoleHostname.ValueString()),
+			"downloadsHostname":            []byte(config.DownloadsHostname.ValueString()),
+			"pgwireHostname":               []byte(config.PgWireHostname.ValueString()),
+			"pgwirePort":                   []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
+			"pgwireExternalEndpoint":       []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
+			"platformVersion":              []byte(config.ProductVersion.ValueString()),
+			"apiEndpointSubnet":            []byte(config.ApiSubnetMode.ValueString()),
+			"apiTlsTermination":            []byte(config.ApiTlsMode.ValueString()),
+			"apiServerNlbCertificateArn":   []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
+			"apiEndpointSecurityGroups":    []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
+			"pgwireEndpointSecurityGroups": []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
 
 			"grafanaPromPushProxVpcHostname": []byte(config.MetricsUrl.ValueString()),
 
-			"o11yNodeAffinityLabelKey":   []byte("deltastream.io/is-managed-node-group"),	//default same as managed node group
+			"o11yNodeAffinityLabelKey":   []byte("deltastream.io/is-managed-node-group"), //default same as managed node group
 			"o11yNodeAffinityLabelValue": []byte("\"true\""),
-			"o11yNodeTaint":              []byte("CriticalAddonsOnly"),						//default taint same as used by managed node group
+			"o11yNodeTaint":              []byte("CriticalAddonsOnly"), //default taint same as used by managed node group
 
 			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
 			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
