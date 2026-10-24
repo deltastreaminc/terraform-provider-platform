@@ -222,7 +222,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"o11yTlsTermination":         []byte(config.O11yTlsMode.ValueString()),
 			"o11yNlbSslCertificate":      []byte(ptr.Deref(config.O11yTlsCertificateArn.ValueStringPointer(), "")),
 			"o11yEndpointSecurityGroups": []byte(ptr.Deref(config.O11yIngressSecurityGroups.ValueStringPointer(), "")),
-			
+	
             "apiHostname":                []byte(config.ApiHostname.ValueString()),
 			"consoleHostname":            []byte(config.ConsoleHostname.ValueString()),
 			"consoleV2Hostname":          []byte(config.ConsoleHostname.ValueString()),
@@ -242,7 +242,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"o11yNodeAffinityLabelKey":   []byte("deltastream.io/is-managed-node-group"),	//default same as managed node group
 			"o11yNodeAffinityLabelValue": []byte("\"true\""),
 			"o11yNodeTaint":              []byte("CriticalAddonsOnly"),						//default taint same as used by managed node group
-			
+	
 			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
 			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
 			"prometheusPVCStorageSize":     []byte("300Gi"), //hardcode
