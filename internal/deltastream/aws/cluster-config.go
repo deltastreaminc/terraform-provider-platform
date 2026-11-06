@@ -264,6 +264,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"rdsControlPlaneMasterPasswordSecret": []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
 			"installationTimestamp":               []byte(config.InstallationTimestamp.ValueString()),
 		}
+		if config.Stack.ValueString() != "stage" {
+			delete(clusterConfig.Data, "e2eLocalConfigSecret")
+		}
 		return nil
 	})
 	if err != nil {
