@@ -142,7 +142,6 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"cloudImageRegistry":    []byte(cloudImagRegistry),
 			"ociCloudImageRegistry": []byte(cloudImagRegistry),
 			"deployConfigSecret":    []byte(deployConfigSecret),
-			"e2eLocalConfigSecret":  []byte(e2eLocalConfigSecret),
 			"rdsCACertsBundleName":  []byte(rdsCACertsRegionalBundleName),
 			"execEngineVersion":     []byte(execEngineVersion),
 			// todo remove duplicate properties
@@ -264,8 +263,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"rdsControlPlaneMasterPasswordSecret": []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
 			"installationTimestamp":               []byte(config.InstallationTimestamp.ValueString()),
 		}
-		if config.Stack.ValueString() != "stage" {
-			delete(clusterConfig.Data, "e2eLocalConfigSecret")
+		if config.Stack.ValueString() == "stage" {
+			clusterConfig.Data["e2eLocalConfigSecret"] = []byte(e2eLocalConfigSecret)
 		}
 		return nil
 	})
