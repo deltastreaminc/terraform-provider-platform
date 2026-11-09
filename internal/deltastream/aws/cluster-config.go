@@ -191,6 +191,8 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"thanosStoreBucketWebRoleARN":      []byte(config.ThanosStoreBucketRoleArn.ValueString()),
 			"thanosSideCarRoleARN":             []byte(config.ThanosSidecarRoleArn.ValueString()),
 			"deadmanAlertRoleARN":              []byte(config.DeadmanAlertRoleArn.ValueString()),
+			"karpenterHelmVersion":             []byte("1.9.1"),
+			"ciliumHelmVersion":                []byte("1.18.6"),
 			"karpenterRoleName":                []byte(config.KarpenterNodeRoleName.ValueString()),
 			"karpenterIrsaARN":                 []byte(config.KarpenterIrsaRoleArn.ValueString()),
 			"storeProxyRoleARN":                []byte(config.StoreProxyRoleArn.ValueString()),
