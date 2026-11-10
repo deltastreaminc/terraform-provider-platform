@@ -91,6 +91,9 @@ type ClusterConfiguration struct {
 	ThanosSidecarRoleArn             basetypes.StringValue `tfsdk:"thanos_sidecar_role_arn"`
 	DeadmanAlertRoleArn              basetypes.StringValue `tfsdk:"deadman_alert_role_arn"`
 	KarpenterNodeRoleName            basetypes.StringValue `tfsdk:"karpenter_node_role_name"`
+	EksKubernetesVersion             basetypes.StringValue `tfsdk:"eks_kubernetes_version"`
+	KarpenterHelmVersion              basetypes.StringValue `tfsdk:"karpenter_helm_version"`
+	CiliumHelmVersion                 basetypes.StringValue `tfsdk:"cilium_helm_version"`
 	KarpenterIrsaRoleArn             basetypes.StringValue `tfsdk:"karpenter_irsa_role_arn"`
 	AiAgentRoleArn                   basetypes.StringValue `tfsdk:"ai_agent_role_arn"`
 	StoreProxyRoleArn                basetypes.StringValue `tfsdk:"store_proxy_role_arn"`
@@ -392,6 +395,21 @@ var Schema = schema.Schema{
 					Description: "The ARN of the role to assume for managing deadman alert resources.",
 					Required:    true,
 					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^arn:aws:iam::[0-9]{12}:role/.+$`), "Invalid Role ARN")},
+				},
+				"eks_kubernetes_version": schema.StringAttribute{
+					Description: "The Kubernetes version of the EKS cluster.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^1\.[0-9]+$`), "Invalid EKS Kubernetes version")},
+				},
+				"karpenter_helm_version": schema.StringAttribute{
+					Description: "The version of the Karpenter Helm chart.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`), "Invalid Karpenter Helm chart version (expected major.minor.patch)")},
+				},
+				"cilium_helm_version": schema.StringAttribute{
+					Description: "The version of the Cilium Helm chart.",
+					Required:    true,
+					Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`), "Invalid Cilium Helm chart version (expected major.minor.patch)")},
 				},
 				"karpenter_node_role_name": schema.StringAttribute{
 					Description: "The name of the role to assumed by nodes started by Karpenter.",

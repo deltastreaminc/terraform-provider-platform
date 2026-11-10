@@ -48,6 +48,7 @@ Required:
 - `auth0_login_config` (String) Auth0 Login Config in base64 string format representing options as json, example: {user_pass_enabled: true, sso_enabled: true, oauth_google_enabled: true}
 - `aws_load_balancer_controller_role_arn` (String) The ARN of the role to assume for managing AWS Load Balancer resources.
 - `aws_secrets_manager_ro_role_arn` (String) The ARN of the role to assume for reading secrets from AWS secrets manager.
+- `cilium_helm_version` (String) The version of the Cilium Helm chart.
 - `console_hostname` (String) The hostname of the DeltaStream console
 - `cpu_architecture` (String) The CPU Architecture for EKS.
 - `cw2loki_role_arn` (String) The ARN of the role to assume for managing CloudWatch-Loki resources.
@@ -59,6 +60,7 @@ Required:
 - `ds_cross_account_role_arn` (String) The ARN of the role for provising trust when accessing customer provided resources.
 - `dynamodb_table_name` (String) The name of the DynamoDB table for storing credentials in the dataplane vault.
 - `ecr_readonly_role_arn` (String) The ARN of the role to assume for read-only access to ECR.
+- `eks_kubernetes_version` (String) The Kubernetes version of the EKS cluster.
 - `eks_resource_id` (String) The resource ID of the DeltaStream dataplane (provided by DeltaStream).
 - `enable_schema_migration_test` (Boolean) Flag to enable schema migration test before deploying new version.
 - `functions_bucket` (String) The S3 bucket for storing Functiosn jar artifacts.
@@ -72,6 +74,7 @@ Required:
 - `kafka_listener_ports` (List of String) The list of kafka listener ports.
 - `kafka_role_arn` (String) The ARN of the role to assume for interacting with Kafka topcis and data.
 - `kafka_role_external_id` (String) The external ID for the kafka role.
+- `karpenter_helm_version` (String) The version of the Karpenter Helm chart.
 - `karpenter_irsa_role_arn` (String) The ARN of the role to assume by Karpenter.
 - `karpenter_node_role_name` (String) The name of the role to assumed by nodes started by Karpenter.
 - `kms_key_id` (String) The KMS key ID for encrypting credentials store in the dataplane vault.
@@ -100,6 +103,7 @@ Required:
 - `rds_control_plane_host_port` (Number) RDS control plane host name
 - `rds_control_plane_master_password_secret` (String) The secret id in AWS secrets manager holding RDS control plane admin credentials managed and rotated by RDS
 - `rds_control_plane_resource_id` (String) The resource ID of the RDS controlplane instance for storing DeltaStream data.
+- `rds_control_plane_using_aurora` (Boolean) Flag to indicate the RDS control plane is an Aurora cluster.
 - `rds_mviews_master_password_secret` (String) The secret id in AWS secrets manager holding RDS MViews admin credentials managed and rotated by RDS
 - `rds_mviews_resource_id` (String) The resource ID of the RDS mviews instance for storing Materialized views data.
 - `rds_mviews_using_aurora` (Boolean) Flag to indicate rds for mviews is aurora cluster.
@@ -124,6 +128,7 @@ Optional:
 
 - `api_ingress_security_groups` (String) Comma separated AWS security group name(s) that will be attached to API endpoint load balancer.
 - `api_tls_certificate_arn` (String) The ARN of the TLS certificate for the dataplane API endpoint.
+- `clickhouse_backup_role_arn` (String) The ARN of the role to assume for the ClickHouse backup sidecar.
 - `cluster_index` (Number) The index of the cluster (provided by DeltaStream).
 - `custom_credentials_image` (String) The image to use for the custom credentials plugin.
 - `custom_credentials_role_arn` (String) The ARN of the role to assume for use by the custom credentials plugin.
