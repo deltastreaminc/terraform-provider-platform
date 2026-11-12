@@ -207,18 +207,18 @@ const deploymentConfigTmpl = `
 }`
 
 type DSSecrets struct {
-	GoogleClientID          string         `json:"googleClientID"`
-	GoogleClientSecret      string         `json:"googleClientSecret"`
-	PagerdutyServiceKey     string         `json:"pagerdutyServiceKey"`
-	Auth0Api                Auth0          `json:"auth0api"`
-	Auth0Cli                Auth0          `json:"auth0cli"`
-	Auth0TrialMgmt          Auth0TrialMgmt `json:"auth0TrialMgmt"`
-	SendgridApiKey          string         `json:"sendgridApiKey"`
-	PostHogPublicId         string         `json:"posthogPublicID"`
-	Tailscale               Tailscale      `json:"tailscale"`
-	TrialConfig             TrialConfig    `json:"trialConfig"`
-	PgwireCertificateBase64 string         `json:"pgwireCertificateBase64"`
-	AI                      AI             `json:"ai"`
+	GoogleClientID      string         `json:"googleClientID"`
+	GoogleClientSecret  string         `json:"googleClientSecret"`
+	PagerdutyServiceKey string         `json:"pagerdutyServiceKey"`
+	Auth0Api            Auth0          `json:"auth0api"`
+	Auth0Cli            Auth0          `json:"auth0cli"`
+	Auth0TrialMgmt      Auth0TrialMgmt `json:"auth0TrialMgmt"`
+	SendgridApiKey      string         `json:"sendgridApiKey"`
+	PostHogPublicId     string         `json:"posthogPublicID"`
+	Tailscale           Tailscale      `json:"tailscale"`
+	TrialConfig         TrialConfig    `json:"trialConfig"`
+	PgwireCertificateBase64   string   `json:"pgwireCertificateBase64"`
+	AI					AI			   `json:"ai"`
 }
 
 type TrialConfig struct {
