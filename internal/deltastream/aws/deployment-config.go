@@ -195,7 +195,6 @@ const deploymentConfigTmpl = `
 	"clientId": "{{ .DSSecret.Tailscale.ClientId }}",
 	"clientSecret": "{{ .DSSecret.Tailscale.ClientSecret }}"
   },
-  "e2eLocalConfig": "{{ .DSSecret.E2eLocalConfig }}",
   "trialConfig": {
     "trialStoreRegion": "{{ .DSSecret.TrialConfig.TrialStoreRegion }}",
     "trialStoreSQSUrl": "{{ .DSSecret.TrialConfig.TrialStoreSQSUrl }}",
@@ -208,19 +207,18 @@ const deploymentConfigTmpl = `
 }`
 
 type DSSecrets struct {
-	GoogleClientID      string         `json:"googleClientID"`
-	GoogleClientSecret  string         `json:"googleClientSecret"`
-	PagerdutyServiceKey string         `json:"pagerdutyServiceKey"`
-	Auth0Api            Auth0          `json:"auth0api"`
-	Auth0Cli            Auth0          `json:"auth0cli"`
-	Auth0TrialMgmt      Auth0TrialMgmt `json:"auth0TrialMgmt"`
-	SendgridApiKey      string         `json:"sendgridApiKey"`
-	PostHogPublicId     string         `json:"posthogPublicID"`
-	Tailscale           Tailscale      `json:"tailscale"`
-	TrialConfig         TrialConfig    `json:"trialConfig"`
-	PgwireCertificateBase64   string   `json:"pgwireCertificateBase64"`
-	AI					AI			   `json:"ai"`
-	E2eLocalConfig      string         `json:"e2eLocalConfig"`
+	GoogleClientID          string         `json:"googleClientID"`
+	GoogleClientSecret      string         `json:"googleClientSecret"`
+	PagerdutyServiceKey     string         `json:"pagerdutyServiceKey"`
+	Auth0Api                Auth0          `json:"auth0api"`
+	Auth0Cli                Auth0          `json:"auth0cli"`
+	Auth0TrialMgmt          Auth0TrialMgmt `json:"auth0TrialMgmt"`
+	SendgridApiKey          string         `json:"sendgridApiKey"`
+	PostHogPublicId         string         `json:"posthogPublicID"`
+	Tailscale               Tailscale      `json:"tailscale"`
+	TrialConfig             TrialConfig    `json:"trialConfig"`
+	PgwireCertificateBase64 string         `json:"pgwireCertificateBase64"`
+	AI                      AI             `json:"ai"`
 }
 
 type TrialConfig struct {
@@ -435,37 +433,37 @@ func UpdateDeploymentConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AW
 	rdsControlPlaneClusterName := fmt.Sprintf("ds-%s-%s-%s-db-0", config.InfraId.ValueString(), config.Stack.ValueString(), config.RdsControlPlaneResourceID.ValueString())
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]any{
-		"AccountID":                  config.AccountId.ValueString(),
-		"InfraID":                    config.InfraId.ValueString(),
+		"AccountID":                   config.AccountId.ValueString(),
+		"InfraID":                     config.InfraId.ValueString(),
 		"VaultUserExternalSecretName": calcVaultUserSecretName(config, cfg.Region),
-		"Region":                     cfg.Region,
-		"TopicReplicas":              topicReplicas,
-		"KmsKeyId":                   config.KmsKeyId.ValueString(),
-		"DynamoDbTable":              config.DynamoDbTableName.ValueString(),
-		"RdsControlPlaneCreds":       pgControlPlaneCred,
-		"RdsControlPlaneConfig":      rdsControlPlaneConfig,
-		"MaterializedViewRdsCreds":   materializedViewPgCred,
-		"MaterializedViewRdsConfig":  materializedViewRdsConfig,
-		"Auth0LoginConfig":           config.Auth0LoginConfig,
-		"DSSecret":                   dsSecrets,
-		"KafkaBrokerList":            strings.Join(kafkaBrokers, ","),
-		"KafkaBrokerListenerPorts":   strings.Join(kafkaListenerPorts, ","),
-		"KafkaRoleARN":               config.KafkaRoleArn.ValueString(),
-		"KafkaRoleExternalId":        config.KafkaRoleExternalId.ValueString(),
-		"ApiHostname":                config.ApiHostname.ValueString(),
-		"ProductArtifactsBucket":     config.ProductArtifactsBucket.ValueString(),
-		"SerdeBucket":                config.SerdeBucket.ValueString(),
-		"SerdeBucketRegion":          cfg.Region,
-		"FunctionsBucket":            config.FunctionsBucket.ValueString(),
-		"FunctionsBucketRegion":      cfg.Region,
-		"WorkloadStateBucket":        config.WorkloadStateBucket.ValueString(),
-		"O11yBucket":                 config.O11yBucket.ValueString(),
-		"OrbBillingBucket":           config.OrbBillingBucket.ValueString(),
-		"OrbBillingBucketRegion":     config.OrbBillingBucketRegion.ValueString(),
-		"KubeClusterName":            kubeClusterName,
-		"KafkaClusterName":           config.KafkaClusterName.ValueString(),
-		"RdsControlPlaneClusterName": rdsControlPlaneClusterName,
-		"Cw2LokiSqsURL":              config.Cw2LokiSqsUrl.ValueString(),
+		"Region":                      cfg.Region,
+		"TopicReplicas":               topicReplicas,
+		"KmsKeyId":                    config.KmsKeyId.ValueString(),
+		"DynamoDbTable":               config.DynamoDbTableName.ValueString(),
+		"RdsControlPlaneCreds":        pgControlPlaneCred,
+		"RdsControlPlaneConfig":       rdsControlPlaneConfig,
+		"MaterializedViewRdsCreds":    materializedViewPgCred,
+		"MaterializedViewRdsConfig":   materializedViewRdsConfig,
+		"Auth0LoginConfig":            config.Auth0LoginConfig,
+		"DSSecret":                    dsSecrets,
+		"KafkaBrokerList":             strings.Join(kafkaBrokers, ","),
+		"KafkaBrokerListenerPorts":    strings.Join(kafkaListenerPorts, ","),
+		"KafkaRoleARN":                config.KafkaRoleArn.ValueString(),
+		"KafkaRoleExternalId":         config.KafkaRoleExternalId.ValueString(),
+		"ApiHostname":                 config.ApiHostname.ValueString(),
+		"ProductArtifactsBucket":      config.ProductArtifactsBucket.ValueString(),
+		"SerdeBucket":                 config.SerdeBucket.ValueString(),
+		"SerdeBucketRegion":           cfg.Region,
+		"FunctionsBucket":             config.FunctionsBucket.ValueString(),
+		"FunctionsBucketRegion":       cfg.Region,
+		"WorkloadStateBucket":         config.WorkloadStateBucket.ValueString(),
+		"O11yBucket":                  config.O11yBucket.ValueString(),
+		"OrbBillingBucket":            config.OrbBillingBucket.ValueString(),
+		"OrbBillingBucketRegion":      config.OrbBillingBucketRegion.ValueString(),
+		"KubeClusterName":             kubeClusterName,
+		"KafkaClusterName":            config.KafkaClusterName.ValueString(),
+		"RdsControlPlaneClusterName":  rdsControlPlaneClusterName,
+		"Cw2LokiSqsURL":               config.Cw2LokiSqsUrl.ValueString(),
 	})
 	if err != nil {
 		diags.AddError("unable to render deployment config", err.Error())
@@ -596,7 +594,7 @@ func UpdateVaultUserSecret(ctx context.Context, cfg aws.Config, dp awsconfig.AWS
 	} else {
 		if _, err = secretsmanagerClient.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
 			SecretId:     ptr.To(vaultUserSecretName),
-			SecretString:  ptr.To(vaultUserSecretValue),
+			SecretString: ptr.To(vaultUserSecretValue),
 		}); err != nil {
 			diags.AddError("unable to update vault user secret "+vaultUserSecretName, err.Error())
 			return
