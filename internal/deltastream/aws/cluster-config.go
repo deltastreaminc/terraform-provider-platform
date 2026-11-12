@@ -112,6 +112,7 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 
 	cloudImagRegistry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", config.AccountId.ValueString(), cfg.Region)
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
+	e2eLocalConfigSecret := fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config-e2e", config.Stack.ValueString(), config.InfraId.ValueString(), cfg.Region, config.EksResourceId.ValueString())
 	// use single entry for a geographic location so we can support both RDS classic or RDS Aurora geo replicated, this is needed as external secret has limit of 64K, so we have to keep this limited to region actually used by a dataplane
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-all-bundle-pem", strings.Split(strings.ToLower(cfg.Region), "-")[0])
 
@@ -190,6 +191,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"thanosStoreBucketWebRoleARN":      []byte(config.ThanosStoreBucketRoleArn.ValueString()),
 			"thanosSideCarRoleARN":             []byte(config.ThanosSidecarRoleArn.ValueString()),
 			"deadmanAlertRoleARN":              []byte(config.DeadmanAlertRoleArn.ValueString()),
+			"kubernetesVersion":                []byte(config.EksKubernetesVersion.ValueString()),
+			"karpenterHelmVersion":             []byte(config.KarpenterHelmVersion.ValueString()),
+			"ciliumHelmVersion":                []byte(config.CiliumHelmVersion.ValueString()),
 			"karpenterRoleName":                []byte(config.KarpenterNodeRoleName.ValueString()),
 			"karpenterIrsaARN":                 []byte(config.KarpenterIrsaRoleArn.ValueString()),
 			"storeProxyRoleARN":                []byte(config.StoreProxyRoleArn.ValueString()),
@@ -220,25 +224,25 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"o11yNlbSslCertificate":      []byte(ptr.Deref(config.O11yTlsCertificateArn.ValueStringPointer(), "")),
 			"o11yEndpointSecurityGroups": []byte(ptr.Deref(config.O11yIngressSecurityGroups.ValueStringPointer(), "")),
 
-			"apiHostname":                []byte(config.ApiHostname.ValueString()),
-			"consoleHostname":            []byte(config.ConsoleHostname.ValueString()),
-			"consoleV2Hostname":          []byte(config.ConsoleHostname.ValueString()),
-			"downloadsHostname":          []byte(config.DownloadsHostname.ValueString()),
-			"pgwireHostname":             []byte(config.PgWireHostname.ValueString()),
-			"pgwirePort":                 []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
-			"pgwireExternalEndpoint":     []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
-			"platformVersion":            []byte(config.ProductVersion.ValueString()),
-			"apiEndpointSubnet":          []byte(config.ApiSubnetMode.ValueString()),
-			"apiTlsTermination":          []byte(config.ApiTlsMode.ValueString()),
-			"apiServerNlbCertificateArn": []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
-			"apiEndpointSecurityGroups":  []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
-			"pgwireEndpointSecurityGroups":  []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
+			"apiHostname":                  []byte(config.ApiHostname.ValueString()),
+			"consoleHostname":              []byte(config.ConsoleHostname.ValueString()),
+			"consoleV2Hostname":            []byte(config.ConsoleHostname.ValueString()),
+			"downloadsHostname":            []byte(config.DownloadsHostname.ValueString()),
+			"pgwireHostname":               []byte(config.PgWireHostname.ValueString()),
+			"pgwirePort":                   []byte(fmt.Sprintf("%q", fmt.Sprintf("%d", pgWireHostPort))),
+			"pgwireExternalEndpoint":       []byte(fmt.Sprintf("%s:%d", config.PgWireHostname.ValueString(), pgWireHostPort)),
+			"platformVersion":              []byte(config.ProductVersion.ValueString()),
+			"apiEndpointSubnet":            []byte(config.ApiSubnetMode.ValueString()),
+			"apiTlsTermination":            []byte(config.ApiTlsMode.ValueString()),
+			"apiServerNlbCertificateArn":   []byte(ptr.Deref(config.ApiTlsCertificateArn.ValueStringPointer(), "")),
+			"apiEndpointSecurityGroups":    []byte(ptr.Deref(config.ApiIngressSecurityGroups.ValueStringPointer(), "")),
+			"pgwireEndpointSecurityGroups": []byte(ptr.Deref(config.PgwireIngressSecurityGroups.ValueStringPointer(), "")),
 
 			"grafanaPromPushProxVpcHostname": []byte(config.MetricsUrl.ValueString()),
 
-			"o11yNodeAffinityLabelKey":   []byte("eks.amazonaws.com/nodegroup"),	//default same as managed node group
-			"o11yNodeAffinityLabelValue": []byte("dsec-prometheus-manual"),
-			"o11yNodeTaint":              []byte("managed-prometheus"),						//default taint same as used by managed node group
+			"o11yNodeAffinityLabelKey":   []byte("deltastream.io/is-managed-node-group"), //default same as managed node group
+			"o11yNodeAffinityLabelValue": []byte("\"true\""),
+			"o11yNodeTaint":              []byte("CriticalAddonsOnly"), //default taint same as used by managed node group
 
 			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
 			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
@@ -260,6 +264,9 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"rdsCACertsSecret":                    []byte(config.RdsCACertsSecret.ValueString()),
 			"rdsControlPlaneMasterPasswordSecret": []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
 			"installationTimestamp":               []byte(config.InstallationTimestamp.ValueString()),
+		}
+		if config.Stack.ValueString() == "stage" {
+			clusterConfig.Data["e2eLocalConfigSecret"] = []byte(e2eLocalConfigSecret)
 		}
 		return nil
 	})
