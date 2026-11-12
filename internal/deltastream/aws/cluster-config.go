@@ -239,14 +239,15 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 
 			"grafanaPromPushProxVpcHostname": []byte(config.MetricsUrl.ValueString()),
 
-			"o11yNodeAffinityLabelKey":     []byte("deltastream.io/is-managed-node-group"), //default same as managed node group
-			"o11yNodeAffinityLabelValue":   []byte("\"true\""),
-			"o11yNodeTaint":                []byte("CriticalAddonsOnly"), //default taint same as used by managed node group
-			"prometheusLocalTSDBRetention": []byte("5d"),                 //hardcode
-			"prometheusMemoryLimit":        []byte("4Gi"),                //hardcode
-			"prometheusPVCStorageSize":     []byte("300Gi"),              //hardcode
-			"thanosQueryMemoryLimit":       []byte("2Gi"),                //hardcode
-			"thanosStoreMemoryLimit":       []byte("1.2Gi"),              //hardcode
+			"o11yNodeAffinityLabelKey":   []byte("deltastream.io/is-managed-node-group"), //default same as managed node group
+			"o11yNodeAffinityLabelValue": []byte("\"true\""),
+			"o11yNodeTaint":              []byte("CriticalAddonsOnly"), //default taint same as used by managed node group
+
+			"prometheusLocalTSDBRetention": []byte("5d"),    //hardcode
+			"prometheusMemoryLimit":        []byte("4Gi"),   //hardcode
+			"prometheusPVCStorageSize":     []byte("300Gi"), //hardcode
+			"thanosQueryMemoryLimit":       []byte("2Gi"),   //hardcode
+			"thanosStoreMemoryLimit":       []byte("1.2Gi"), //hardcode
 
 			"vpcDnsIP": []byte(config.VpcDnsIP.ValueString()),
 
