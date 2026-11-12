@@ -594,7 +594,7 @@ func UpdateVaultUserSecret(ctx context.Context, cfg aws.Config, dp awsconfig.AWS
 	} else {
 		if _, err = secretsmanagerClient.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
 			SecretId:     ptr.To(vaultUserSecretName),
-			SecretString: ptr.To(vaultUserSecretValue),
+			SecretString:  ptr.To(vaultUserSecretValue),
 		}); err != nil {
 			diags.AddError("unable to update vault user secret "+vaultUserSecretName, err.Error())
 			return
