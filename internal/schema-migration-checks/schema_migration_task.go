@@ -56,10 +56,9 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	if diags.HasError() {
 		return false, fmt.Errorf("failed to get cluster configuration: %s", diags.Errors())
 	}
-	if clusterConfig.RdsControlPlaneUsingAurora.ValueBool() {
-		tflog.Debug(ctx, "Skipping schema migration test because the RDS control plane uses Aurora")
-		return true, nil
-	}
+	// RDS control plane may be either a classic RDS instance or an Aurora cluster;
+	// Aurora uses cluster-level snapshot/restore APIs instead of instance-level ones.
+	isAurora := clusterConfig.RdsControlPlaneUsingAurora.ValueBool()
 
 	// Create context with timeout
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
@@ -108,33 +107,63 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	rdsClient := rds.NewFromConfig(cfg)
 
 	cleanupRequired := false
-	// Check if an earlier schema migration test RDS instance exists
-	_, err = rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
-	})
-	if err != nil {
-		var notFound *rdsTypes.DBInstanceNotFoundFault
-		if !errors.As(err, &notFound) {
-			return false, fmt.Errorf("failed to check RDS instance: %w", err)
+	if isAurora {
+		// Check if an earlier schema migration test Aurora cluster exists
+		_, err = rdsClient.DescribeDBClusters(timeoutCtx, &rds.DescribeDBClustersInput{
+			DBClusterIdentifier: aws.String(restoredRDSInstanceID),
+		})
+		if err != nil {
+			var notFound *rdsTypes.DBClusterNotFoundFault
+			if !errors.As(err, &notFound) {
+				return false, fmt.Errorf("failed to check Aurora cluster: %w", err)
+			}
+			tflog.Debug(ctx, "Prior Aurora cluster does not exist, proceeding with migration test")
+		} else {
+			cleanupRequired = true
 		}
-		tflog.Debug(ctx, "Prior RDS instance does not exist, proceeding with migration test")
-	} else {
-		cleanupRequired = true
-	}
 
-	// Check if snapshot exists
-	_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
-		DBSnapshotIdentifier: aws.String(snapshotID),
-	})
-
-	if snapshotErr != nil {
-		var notFound *rdsTypes.DBSnapshotNotFoundFault
-		if !errors.As(snapshotErr, &notFound) {
-			return false, fmt.Errorf("failed to check RDS snapshot: %w", snapshotErr)
+		// Check if cluster snapshot exists
+		_, snapshotErr := rdsClient.DescribeDBClusterSnapshots(timeoutCtx, &rds.DescribeDBClusterSnapshotsInput{
+			DBClusterSnapshotIdentifier: aws.String(snapshotID),
+		})
+		if snapshotErr != nil {
+			var notFound *rdsTypes.DBClusterSnapshotNotFoundFault
+			if !errors.As(snapshotErr, &notFound) {
+				return false, fmt.Errorf("failed to check Aurora cluster snapshot: %w", snapshotErr)
+			}
+			tflog.Debug(ctx, "Prior Aurora cluster snapshot does not exist, proceeding with migration test")
+		} else {
+			cleanupRequired = true
 		}
-		tflog.Debug(ctx, "Prior RDS snapshot does not exist, proceeding with migration test")
 	} else {
-		cleanupRequired = true
+		// Check if an earlier schema migration test RDS instance exists
+		_, err = rdsClient.DescribeDBInstances(timeoutCtx, &rds.DescribeDBInstancesInput{
+			DBInstanceIdentifier: aws.String(restoredRDSInstanceID),
+		})
+		if err != nil {
+			var notFound *rdsTypes.DBInstanceNotFoundFault
+			if !errors.As(err, &notFound) {
+				return false, fmt.Errorf("failed to check RDS instance: %w", err)
+			}
+			tflog.Debug(ctx, "Prior RDS instance does not exist, proceeding with migration test")
+		} else {
+			cleanupRequired = true
+		}
+
+		// Check if snapshot exists
+		_, snapshotErr := rdsClient.DescribeDBSnapshots(timeoutCtx, &rds.DescribeDBSnapshotsInput{
+			DBSnapshotIdentifier: aws.String(snapshotID),
+		})
+
+		if snapshotErr != nil {
+			var notFound *rdsTypes.DBSnapshotNotFoundFault
+			if !errors.As(snapshotErr, &notFound) {
+				return false, fmt.Errorf("failed to check RDS snapshot: %w", snapshotErr)
+			}
+			tflog.Debug(ctx, "Prior RDS snapshot does not exist, proceeding with migration test")
+		} else {
+			cleanupRequired = true
+		}
 	}
 
 	if cleanupRequired {
@@ -153,7 +182,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 			"snapshot_id":          snapshotID,
 			"infraID":              string(secret.Data["infraID"]),
 		}
-		err = cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars)
+		err = cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, cleanupVars, isAurora)
 		if err != nil {
 			return false, fmt.Errorf("failed to initiate cleanup of prior schema migration test RDS instance and snapshot: %w", err)
 		}
@@ -224,6 +253,8 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 			mainRDSDatabaseName = database
 		}
 		if host, ok := postgresConfig["host"].(string); ok {
+			// The first label of the endpoint hostname is the DB instance identifier for
+			// classic RDS, or the DB cluster identifier for Aurora.
 			instanceID := host
 			if idx := strings.Index(host, "."); idx != -1 {
 				instanceID = host[:idx]
@@ -263,7 +294,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	}
 
 	// Prepare RDS for migration
-	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, cfg, kubeClient.Client, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"])
+	restoredRDSInstanceID, restoredRDSEndpoint, restoredRDSMasterSecretName, snapshotID, err := PrepareRDSForMigration(timeoutCtx, cfg, kubeClient.Client, k8sClientset, templateVarsForSchemaMigrationTest["ApiServerNewVersion"], mainRDSDBInstanceIdentifier, templateVarsForSchemaMigrationTest["Region"], templateVarsForSchemaMigrationTest["infraID"], isAurora)
 	if err != nil {
 		return false, err
 	}
@@ -312,7 +343,7 @@ func RunMigrationTestBeforeUpgrade(ctx context.Context, cfg aws.Config, dp awsco
 	}()
 
 	go func() {
-		if err := cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, templateVarsForSchemaMigrationTest); err != nil {
+		if err := cleanupSchemaRestoredRDSInstanceandSnapshot(cfg, templateVarsForSchemaMigrationTest, isAurora); err != nil {
 			tflog.Debug(ctx, "Failed to cleanup schema restored RDS instance and snapshot", map[string]interface{}{"error": err.Error()})
 		}
 	}()
