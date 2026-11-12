@@ -112,7 +112,6 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 
 	cloudImagRegistry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", config.AccountId.ValueString(), cfg.Region)
 	deployConfigSecret := calcDeploymentConfigSecretName(config, cfg.Region)
-	e2eLocalConfigSecret := fmt.Sprintf("deltastream/%s/ds/%s/aws/%s/%s/deployment-config-e2e", config.Stack.ValueString(), config.InfraId.ValueString(), cfg.Region, config.EksResourceId.ValueString())
 	// use single entry for a geographic location so we can support both RDS classic or RDS Aurora geo replicated, this is needed as external secret has limit of 64K, so we have to keep this limited to region actually used by a dataplane
 	rdsCACertsRegionalBundleName := fmt.Sprintf("rds-certs-%s-all-bundle-pem", strings.Split(strings.ToLower(cfg.Region), "-")[0])
 
@@ -264,9 +263,6 @@ func updateClusterConfig(ctx context.Context, cfg aws.Config, dp awsconfig.AWSDa
 			"rdsCACertsSecret":                    []byte(config.RdsCACertsSecret.ValueString()),
 			"rdsControlPlaneMasterPasswordSecret": []byte(config.RdsControlPlaneMasterPasswordSecret.ValueString()),
 			"installationTimestamp":               []byte(config.InstallationTimestamp.ValueString()),
-		}
-		if config.Stack.ValueString() == "stage" {
-			clusterConfig.Data["e2eLocalConfigSecret"] = []byte(e2eLocalConfigSecret)
 		}
 		return nil
 	})
