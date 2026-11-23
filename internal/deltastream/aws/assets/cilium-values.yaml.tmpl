@@ -127,6 +127,8 @@ hostFirewall:
   enabled: false
 l7Proxy: true
 tunnelProtocol: ""
+tolerations:
+  - operator: Exists
 certgen:
   image:
     repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/certgen"
