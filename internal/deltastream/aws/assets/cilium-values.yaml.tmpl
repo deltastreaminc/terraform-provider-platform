@@ -22,6 +22,8 @@ bpf:
   mapDynamicSizeRatio: 0.01
   masquerade: true
   policyMapMax: 65536
+enableIPv4Masquerade: true
+enableIPv6Masquerade: true
 cni:
   exclusive: false
 # egressMasqueradeInterfaces: eth0
@@ -127,6 +129,8 @@ hostFirewall:
   enabled: false
 l7Proxy: true
 tunnelProtocol: ""
+tolerations:
+  - operator: Exists
 certgen:
   image:
     repository: "{{ .EcrAwsAccountId }}.dkr.ecr.{{ .Region }}.amazonaws.com/deltastreaminc/v2/mirror/quay.io/cilium/certgen"
